@@ -113,5 +113,40 @@ service cloud.firestore {
         && request.resource.data.level == getAfter(playerPath(uid)).data.level;
       allow delete: if false;
     }
+
+    match /playerPresence/{uid} {
+      allow read: if signedIn()
+        && (isOwner(uid)
+          || exists(friendPath(request.auth.uid, uid))
+          || exists(friendPath(uid, request.auth.uid)));
+      allow create, update: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['online', 'lastSeen'])
+        && request.resource.data.online is bool
+        && request.resource.data.lastSeen is timestamp;
+      allow delete: if false;
+    }
+
+    match /squadInvites/{inviteId} {
+      allow read: if signedIn()
+        && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['fromUid', 'toUid', 'fromName', 'fromTag', 'status', 'createdAt'])
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid is string
+        && request.resource.data.toUid != request.auth.uid
+        && inviteId.matches('^[A-Za-z0-9_-]+$')
+        && request.resource.data.fromName == get(playerPath(request.auth.uid)).data.displayName
+        && request.resource.data.fromTag == get(playerPath(request.auth.uid)).data.tag
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt is timestamp
+        && exists(friendPath(request.auth.uid, request.resource.data.toUid))
+        && exists(friendPath(request.resource.data.toUid, request.auth.uid));
+      allow update: if signedIn()
+        && resource.data.toUid == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status in ['accepted', 'rejected'];
+      allow delete: if false;
+    }
   }
 }

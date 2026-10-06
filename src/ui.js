@@ -1,4 +1,5 @@
 import {MODES,SECTORS} from '../functions/shared/catalog.js';
+import {isAdminPlayer} from './player-tag.js';
 const $ = selector => document.querySelector(selector);
 
 /** Única capa que toca el DOM; el motor publica datos, no elementos HTML. */
@@ -28,6 +29,8 @@ export class UI {
   }
   profile(profile, guest) {
     $('#profile-name').textContent = guest ? 'INVITADO' : profile.displayName;
+    const adminBadge=$('#profile-admin-badge');
+    if(adminBadge)adminBadge.hidden=guest||!isAdminPlayer(profile);
     $('#level').textContent = `NIVEL ${profile.level}`;
     $('#xp').textContent = `${profile.experience} XP`;
     $('#sign-out').hidden = false;

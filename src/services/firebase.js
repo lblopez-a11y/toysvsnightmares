@@ -11,7 +11,7 @@ function generatePlayerTag(displayName,uid){
  * no impide probar el motor como invitado. Nunca guarda datos de invitado.
  */
 export class AccountService {
-  constructor() { this.enabled = !!firebaseConfig?.projectId; this.user = null; }
+  constructor() { this.enabled = !!firebaseConfig?.projectId; this.user = null; this.presenceCleanup=null; }
   async init(onSession) {
     if (!this.enabled) return;
     const [appSDK, authSDK, firestoreSDK] = await Promise.all([
@@ -109,6 +109,66 @@ export class AccountService {
     }
     throw new Error('Acción social inválida.');
   }
+  async sendSquadInvite(targetUid) {
+    if(!this.user||!this.db)throw new Error('Inicia sesión para invitar amigos.');
+    if(typeof targetUid!=='string'||!targetUid||targetUid===this.user.uid)throw new Error('Jugador inválido.');
+    const {collection,doc,getDoc,setDoc,serverTimestamp}=this.firestoreSDK,fromUid=this.user.uid;
+    const inviteRef=doc(collection(this.db,'squadInvites'));
+    const [senderSnap,targetFriendSnap]=await Promise.all([
+      getDoc(doc(this.db,'players',fromUid)),
+      getDoc(doc(this.db,'players',fromUid,'friends',targetUid)),
+    ]);
+    if(!senderSnap.exists()||!targetFriendSnap.exists())throw new Error('Solo puedes invitar a un amigo.');
+    const sender=senderSnap.data();
+    await setDoc(inviteRef,{
+      fromUid,toUid:targetUid,fromName:sender.displayName||'Jugador',fromTag:sender.tag||'',
+      status:'pending',createdAt:serverTimestamp(),
+    });
+  }
+  async respondToSquadInvite(inviteId,status) {
+    if(!this.user||!this.db)throw new Error('Inicia sesión para responder invitaciones.');
+    if(typeof inviteId!=='string'||!inviteId||!['accepted','rejected'].includes(status))throw new Error('Invitación inválida.');
+    const {doc,updateDoc}=this.firestoreSDK;
+    await updateDoc(doc(this.db,'squadInvites',inviteId),{status});
+  }
+  watchPresence(uid,onValue,onError) {
+    if(!this.db||typeof uid!=='string'||!uid)throw new Error('Presencia no disponible.');
+    return this.firestoreSDK.onSnapshot(
+      this.firestoreSDK.doc(this.db,'playerPresence',uid),
+      snapshot=>onValue(snapshot.exists()?snapshot.data():null),
+      onError,
+    );
+  }
+  watchIncomingSquadInvites(uid,onValue,onError) {
+    if(!this.db||typeof uid!=='string'||!uid)throw new Error('Invitaciones no disponibles.');
+    const {collection,query,where}=this.firestoreSDK;
+    return this.firestoreSDK.onSnapshot(
+      query(collection(this.db,'squadInvites'),where('toUid','==',uid)),
+      snapshot=>onValue(snapshot.docs.map(item=>({...item.data(),id:item.id}))),
+      onError,
+    );
+  }
+  startPresence(user,onError) {
+    this.stopPresence();
+    if(!user||!this.db)return;
+    const {doc,setDoc,serverTimestamp}=this.firestoreSDK,ref=doc(this.db,'playerPresence',user.uid);
+    const write=async online=>{
+      try{await setDoc(ref,{online,lastSeen:serverTimestamp()},{merge:true});}
+      catch(error){onError?.(error);}
+    };
+    void write(true);
+    const heartbeat=setInterval(()=>void write(true),25000);
+    const markOffline=()=>void write(false);
+    window.addEventListener('pagehide',markOffline);
+    this.presenceCleanup=()=>{
+      clearInterval(heartbeat);
+      window.removeEventListener('pagehide',markOffline);
+      const offlineWrite=write(false);
+      this.presenceCleanup=null;
+      return offlineWrite;
+    };
+  }
+  stopPresence(){return this.presenceCleanup?.();}
   watchPlayerCollection(uid,name,onValue,onError) {
     if(!this.db||!['friendRequests','friends'].includes(name))throw new Error('Colección social no disponible.');
     const ref=this.firestoreSDK.collection(this.db,'players',uid,name);
@@ -121,6 +181,6 @@ export class AccountService {
   }
   // XP, desbloqueos y K/D se escribirán desde un backend de confianza.
   // Firestore es persistencia de perfiles; no es transporte de simulación FPS.
-  async signOut() { if (this.auth) await this.authSDK.signOut(this.auth); }
-  dispose() { this.unsubscribe?.(); }
+  async signOut() { await this.stopPresence();if (this.auth) await this.authSDK.signOut(this.auth); }
+  dispose() { this.stopPresence();this.unsubscribe?.(); }
 }

@@ -233,3 +233,54 @@ body[data-state="menu"] .vignette{background:linear-gradient(90deg,#0b242bc9,tra
   font-size: 10px;
   color: #93b2b0;
 }
+
+.badge-admin {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #ff4757;
+  color: white;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  vertical-align: middle;
+}
+.badge-admin[hidden] { display: none; }
+
+#invite-modal[hidden] { display: none; }
+#invite-modal .panel { max-height: min(80vh, 640px); overflow-y: auto; }
+.invite-list { display: flex; flex-direction: column; gap: 8px; margin: 18px 0; }
+.invite-friend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #0d232a;
+  border: 1px solid #ffffff18;
+  border-radius: 6px;
+}
+.invite-friend-identity { min-width: 0; }
+.invite-friend-name { display: flex; align-items: center; font-size: 13px; font-weight: 700; }
+.invite-friend-tag { display: block; margin-top: 3px; color: #93b2b0; font-size: 10px; }
+.invite-friend .button { width: auto; min-height: 36px; padding: 0 14px; }
+.invite-friend .button:disabled { cursor: not-allowed; opacity: .5; }
+.invite-note { color: #93b2b0 !important; font-size: 11px !important; }
+.invite-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 30;
+  width: min(360px, calc(100vw - 40px));
+  padding: 16px;
+  border: 1px solid #ffffff25;
+  border-radius: 8px;
+  background: #1e272e;
+  color: white;
+  box-shadow: 0 4px 20px #0008;
+}
+.invite-toast p { margin: 0 0 8px; font-size: 13px; }
+.invite-toast small { color: #a9c0c0; font-size: 10px; }
+.invite-toast-actions { display: flex; gap: 10px; margin-top: 12px; }
+.invite-toast-actions button { width: auto; padding: 0 12px; }
