@@ -1,0 +1,235 @@
+/* Lobby: the living model shares the viewport with a compact, accessible UI. */
+body[data-state="menu"] .vignette{background:linear-gradient(90deg,#0b242bc9,transparent 48%,#0b242b55)}
+.topbar{gap:25px}.wallet{display:flex;align-items:center;gap:19px;font-size:11px;white-space:nowrap}.wallet>span:first-child{color:#e5cb83}.wallet>span:nth-child(2){color:#d8b7f1}.wallet #level{border:1px solid #d5f69a66;padding:9px;color:var(--lime)}
+#lobby-nav{display:flex;gap:24px;margin-right:auto}#lobby-nav button,.text-button,.faction-tabs button,#team-options button{background:transparent;border:0;padding:10px 0;color:#b0c4c5;font:600 10px 'DM Sans',sans-serif;letter-spacing:1px}#lobby-nav button.active,#lobby-nav button:hover{color:var(--lime);box-shadow:0 2px var(--lime)}
+#menu-screen{overflow:visible;pointer-events:none}#menu-screen button,#menu-screen article,#character-grid,#character-detail,#modes-panel{pointer-events:auto}#lobby-home{height:100%;position:relative}.lobby-intro{position:absolute;top:9%;left:0;max-width:340px}.lobby-intro h2{font-size:clamp(40px,4.7vw,69px);margin:22px 0}.lobby-intro p:not(.eyebrow){color:#afc6c5;font-size:13px;line-height:1.8}.lobby-intro .button{margin-top:25px;max-width:245px}.hero-name{position:absolute;left:49%;bottom:11%;text-align:center;transform:translateX(-50%);width:360px}.hero-name h3{font:700 31px 'Barlow Condensed',sans-serif;text-transform:uppercase;margin:12px 0 5px}.hero-name p{color:#a9c1c1;font-size:11px}.squad{position:absolute;bottom:38px;left:0}.squad>div{display:flex;gap:25px;margin-top:16px}.invite{background:none;border:0;display:grid;justify-items:center;gap:9px;color:#bed0cf;min-width:80px}.invite b{display:grid;place-items:center;border:1px dashed #aec3be70;border-radius:50%;width:45px;height:45px;font-size:25px;font-weight:400;transition:background .2s}.invite:hover b{background:#d5f69a20;color:var(--lime)}.invite span{font-size:8px;letter-spacing:.8px}.invite small{font-size:6px;color:#94abae}
+.play-card{position:absolute;right:0;bottom:36px;width:290px;border:1px solid #e0e9c733;border-radius:12px;background:linear-gradient(140deg,#294b51eb,#112e38f5);padding:24px;backdrop-filter:blur(20px);box-shadow:0 15px 70px #0003}.play-card h3{font:700 34px 'Barlow Condensed',sans-serif;text-transform:uppercase;margin:13px 0 8px}.play-card p{color:#acc5c5;font-size:11px}.play-card .text-button{font-size:9px;text-decoration:underline;text-underline-offset:5px;margin:5px 0 18px;color:#d2e3d7}.play-card .primary{font:700 24px 'Barlow Condensed',sans-serif;padding:15px 20px}.play-card small{display:block;text-align:center;font-size:8px;line-height:1.5;color:#9db6b8;margin-top:15px}.save-info{position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:space-between;color:#a9bebb;font-size:9px;letter-spacing:.5px}
+#characters-panel{height:calc(100% - 28px);position:relative}.roster-heading{position:absolute;left:0;top:10px;width:58%}.roster-heading h2{font-size:43px;margin:8px 0 12px}.roster-heading h2 span{font-family:'DM Sans';vertical-align:middle;font-size:15px;color:#90aba8;border:1px solid #ffffff30;border-radius:50%;padding:5px}.faction-tabs{display:flex;gap:22px}.faction-tabs button:hover,.faction-tabs button.active{color:var(--lime)}#character-grid{position:absolute;left:0;top:132px;bottom:0;width:58%;overflow-y:auto;padding:0 12px 8px 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-content:start;scrollbar-width:thin;scrollbar-color:#8ba990 #1b3941}.character-card{border:1px solid #cad8bc2e;border-radius:8px;overflow:hidden;background:linear-gradient(145deg,#2b505ccc,#18333eee);transition:border-color .2s}.character-card.nightmares{background:linear-gradient(140deg,#454258dd,#242d3aee)}.character-card:hover{border-color:#e1fbb37a}.card-preview{position:relative;width:100%;display:flex;flex-direction:column;align-items:start;border:0;background:none;padding:8px 13px;color:#ecf4dc;text-align:left}.card-preview img{display:block;height:100px;width:100%;object-fit:contain}.card-preview strong{font:600 18px 'Barlow Condensed';text-transform:uppercase;margin:6px 0;min-height:20px}.card-preview small{font-size:8px;color:#b6c9c9}.card-team{position:absolute;top:9px;left:10px;font-size:6px;letter-spacing:1px;color:#c8e7cf}.nightmares .card-team{color:#d5b3ea}.lock-badge{position:absolute;right:9px;top:8px;color:#e9e6cd;opacity:.6}.locked img{filter:saturate(.6);opacity:.75}.requirement{display:block;font-size:8px;margin:4px 13px 10px;color:#afc1c3}.card-action{width:100%;border:0;border-top:1px solid #d5f69a20;color:#d5f69a;background:#c7ef9710;font:700 9px 'DM Sans';padding:11px;letter-spacing:1px}.card-action:hover{background:#c7ef9728}#character-detail{position:absolute;right:0;top:0;bottom:0;width:24%;overflow-y:auto;padding:20px;background:linear-gradient(180deg,#14303bdc,#142f39ee);border:1px solid #e7e9d625;border-radius:10px;scrollbar-width:thin}.detail-size{font-size:9px!important;color:#c4d5d0!important}#character-detail h3{font:700 32px 'Barlow Condensed';margin:12px 0 9px;text-transform:uppercase}#character-detail>p{font-size:10px;line-height:1.6;color:#a8c1c3}#character-detail label{display:flex;justify-content:space-between;font-size:9px;margin-top:16px}#character-detail meter{width:100%;height:7px;margin-top:7px;accent-color:#d1f58e}#character-detail h4{font-size:12px;margin:25px 0 5px;color:#e6eec6}.ability-detail{border-top:1px solid #ffffff15;padding:14px 0 1px}.ability-detail b{font-size:10px;color:#d7e7c0}.ability-detail p{font-size:10px;line-height:1.7;color:#b0c2c5}.ability-detail+small{display:block;margin-top:18px;font-size:10px;color:#ebd093}
+#modes-panel{height:calc(100% - 25px);overflow:auto;padding-top:15px}#modes-panel>h2{font-size:44px;margin:12px 0 28px}.mode-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}.mode-card{border:1px solid #e1f6b530;border-radius:10px;background:linear-gradient(150deg,#2c515bea,#142d39f5);color:#e6efd5;padding:23px;text-align:left;position:relative;min-height:315px;overflow:hidden;transition:transform .2s,border-color .2s}.mode-card:hover,.mode-card.active{border-color:#d5f69a;transform:translateY(-3px)}.mode-number{font-size:10px;letter-spacing:2px;color:#9fbeb9}.mode-art{height:100px;display:grid;place-items:center;font-size:75px;color:#cbe9a3;text-shadow:0 0 45px #b9ff7b66;background:radial-gradient(ellipse,#a6cf8820,transparent 65%)}.mode-art.confirmed{color:#f2ce8e}.mode-art.horde{color:#b9a2e4}.mode-card h3{font:700 33px 'Barlow Condensed';text-transform:uppercase;margin:12px 0}.mode-card strong{font-size:10px;color:#c2d3cf}.mode-card p{font-size:11px;line-height:1.8;color:#aac2c6;margin:15px 0 25px;min-height:78px}.mode-select{font-size:9px;letter-spacing:1px;color:#d5f69a}#team-options{display:flex;gap:12px;justify-content:center;padding:20px}#team-options button{border:1px solid #d2e7ad40;padding:11px 20px;border-radius:5px}#team-options button.active{background:#d5f69a;color:#17313a}
+#blind-overlay{position:absolute;inset:0;background:#180e29;opacity:0;transition:opacity .3s;pointer-events:none}#upgrade-shop{position:fixed;right:24px;bottom:210px;z-index:4;width:260px;border:1px solid #e7d39460;border-radius:8px;background:#19333beb;padding:18px;pointer-events:auto}#upgrade-shop h3{font:700 23px 'Barlow Condensed';margin:0 0 10px}#upgrade-shop p{font-size:11px;color:#dacd9d}#upgrade-shop button{display:block;width:100%;margin-top:8px;text-align:left;background:#e2f1ca14;border:1px solid #ffffff25;color:#e1eed1;border-radius:4px;padding:11px;font:500 10px 'DM Sans'}#upgrade-shop button:hover{background:#e2f1ca33}.abilities{gap:22px}.abilities small{max-width:100px;line-height:1.5}.profile{flex-shrink:0}
+@media(max-height:760px) and (min-width:761px){.lobby-intro{top:2%}.lobby-intro h2{font-size:50px}.hero-name{bottom:4%}.play-card{padding:20px;width:270px}.squad{bottom:30px}#character-grid{top:125px}.card-preview img{height:76px}.mode-card{min-height:270px;padding:16px}.mode-art{height:65px;font-size:55px}.mode-card p{font-size:10px;min-height:65px}.mode-card h3{font-size:29px}#modes-panel>h2{font-size:36px;margin-bottom:18px}}
+@media(max-width:1100px){#lobby-nav{gap:14px}.wallet{gap:10px}.topbar{gap:18px}.profile .avatar,.profile #player-name{display:none}.lobby-intro h2{font-size:44px}.lobby-intro{max-width:240px}.play-card{width:255px}.squad>div{gap:10px}.hero-name{left:48%;width:270px}.hero-name h3{font-size:25px}#character-grid{width:62%}#character-detail{width:32%;padding:15px}.mode-card{padding:17px}.mode-card h3{font-size:28px}}
+@media(max-width:760px){.topbar{padding:0 5%;height:100px;align-items:start;padding-top:18px;gap:12px;flex-wrap:wrap}.brand{font-size:11px}.wallet{margin-left:auto;font-size:9px}#lobby-nav{position:absolute;top:58px;left:5%;gap:28px}.profile{display:none}#menu-screen{inset:105px 5% 50px;overflow-y:auto;pointer-events:auto}.lobby-intro{top:4%;max-width:200px}.lobby-intro h2{font-size:34px}.lobby-intro>.eyebrow{font-size:7px}.lobby-intro>p:not(.eyebrow){font-size:10px}.lobby-intro .button{font-size:9px;padding:10px;min-height:35px;width:170px}.hero-name{left:auto;right:0;top:39%;bottom:auto;transform:none;width:180px}.hero-name h3{font-size:22px}.hero-name .eyebrow{font-size:7px}.hero-name p{font-size:9px}.squad{bottom:30px;left:0}.squad>div{gap:2px}.invite{min-width:40px;padding:2px}.invite b{width:32px;height:32px}.invite span{font-size:5px}.invite small{display:none}.squad .eyebrow{font-size:6px}.play-card{right:0;bottom:27px;width:195px;padding:14px}.play-card h3{font-size:26px}.play-card .eyebrow{font-size:7px}.play-card p{font-size:9px}.play-card .text-button{margin:0 0 10px;font-size:7px}.play-card .primary{font-size:21px;padding:12px}.play-card small{font-size:6px}.save-info{font-size:7px}.roster-heading{top:0;width:100%;position:relative}.roster-heading h2{font-size:32px}.roster-heading .eyebrow{font-size:7px}#characters-panel{height:auto;padding-bottom:32px}#character-grid{position:relative;top:auto;bottom:auto;width:100%;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:12px;max-height:45vh;padding-right:3px}.card-preview{padding:5px 7px}.card-preview img{height:65px}.card-preview strong{font-size:14px;min-height:30px}.card-preview small{font-size:6px}.card-team{font-size:4px}.requirement{margin:3px 7px 8px;font-size:6px}.card-action{font-size:7px;padding:9px}#character-detail{position:relative;top:auto;bottom:auto;width:100%;margin-top:15px;max-height:none}#character-detail h3{font-size:25px}.mode-grid{grid-template-columns:1fr;gap:12px}.mode-card{min-height:190px;padding:16px 100px 16px 17px}.mode-card h3{font-size:28px}.mode-art{position:absolute;right:15px;top:40px;width:75px}.mode-card p{min-height:0;margin:12px 0;line-height:1.7}#modes-panel{height:calc(100% - 30px)}#modes-panel>h2{font-size:31px}#team-options{flex-wrap:wrap;gap:8px}#team-options button{padding:9px;font-size:8px}.abilities{gap:10px}.abilities small{max-width:75px;font-size:7px}#upgrade-shop{right:15px;bottom:245px;width:220px;padding:12px}}
+#character-grid{grid-auto-rows:minmax(195px,max-content)}.character-card{min-height:195px}.card-preview img{height:88px}.card-preview strong{min-height:22px}
+@media(max-width:760px){#character-grid{grid-auto-rows:minmax(175px,max-content)}.character-card{min-height:175px}.card-preview img{height:70px}}
+.objective-marker{position:absolute;left:0;top:0;background:#173c42dc;border:1px solid #def69a;border-radius:5px;color:#eaffba;padding:7px 12px;font-size:10px;letter-spacing:1px;box-shadow:0 0 25px #d1f58e22}#selected-mode-help{line-height:1.7;font-size:10px;color:#d5e1cb;max-width:270px}.play-card h3{margin-bottom:5px}.play-card #selected-mode-info{margin-bottom:7px}.play-card #selected-mode-help{margin-bottom:4px}
+#character-grid{grid-auto-rows:minmax(218px,max-content)}.character-card{min-height:218px;display:flex;flex-direction:column}.card-action{margin-top:auto;flex-shrink:0}.card-preview{flex-shrink:0}.requirement{flex-shrink:0}
+@media(max-width:760px){#character-grid{grid-auto-rows:minmax(180px,max-content)}.character-card{min-height:180px}}
+.vitals,.ammo{background:linear-gradient(120deg,#102c37e8,#102c3799);padding:14px 18px;border:1px solid #e0f0c522;border-radius:8px;text-shadow:0 1px 3px #0006}.vitals{width:245px}.ammo{min-width:220px}.abilities small{color:#fff1d2;text-shadow:0 1px 3px #10242c,0 0 8px #10242c}.controls-strip{background:#15323ba8;border-radius:5px;padding:7px 10px;color:#dce8d2}.vitals .eyebrow,.ammo .eyebrow{color:#d6ecb7}
+@media(max-width:760px){.vitals{width:143px;padding:10px}.ammo{min-width:145px;padding:10px}.ammo .eyebrow{line-height:1.5}.controls-strip{padding:4px 6px}}
+
+/* --- ESTILOS DEL PANEL SOCIAL Y AMIGOS --- */
+.social-panel-shell {
+  height: calc(100% - 40px);
+  overflow-y: auto;
+  padding-top: 10px;
+  pointer-events: auto;
+}
+
+.social-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.social-header h2 {
+  font-size: 44px;
+  margin: 0;
+}
+
+.social-header h2 span {
+  color: var(--lime);
+  font-size: 28px;
+}
+
+.my-id-card {
+  background: linear-gradient(135deg, #183a44, #102830);
+  border: 1px solid #d5f69a55;
+  border-radius: 8px;
+  padding: 10px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.my-id-card small {
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: #a3c2c0;
+}
+
+.my-id-card strong {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 22px;
+  color: var(--lime);
+  letter-spacing: 1px;
+}
+
+.social-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.social-card {
+  border: 1px solid #ffffff24;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #1b3d47eb, #112a33f5);
+  padding: 20px;
+  backdrop-filter: blur(10px);
+}
+
+.friends-wide {
+  grid-column: span 2;
+}
+
+.social-card h3 {
+  font: 700 24px 'Barlow Condensed', sans-serif;
+  text-transform: uppercase;
+  margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.badge {
+  background: var(--coral);
+  color: #122b32;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.search-box {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.search-box input {
+  flex: 1;
+  background: #0a1e25;
+  border: 1px solid #ffffff33;
+  border-radius: 6px;
+  padding: 10px 14px;
+  color: var(--cream);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  outline: none;
+}
+
+.search-box input:focus {
+  border-color: var(--lime);
+}
+
+.search-box .button {
+  width: auto;
+  min-height: 40px;
+  padding: 0 18px;
+}
+
+.status-msg {
+  display: block;
+  font-size: 11px;
+  margin-top: 8px;
+  color: var(--lime);
+}
+
+.social-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-top: 10px;
+}
+
+.empty-msg {
+  font-size: 11px;
+  color: #8faab0;
+  font-style: italic;
+  margin: 10px 0;
+}
+
+/* Tarjeta de Solicitud Recibida */
+.request-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #0d232a;
+  border: 1px solid #ffffff15;
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+.request-item strong {
+  font-size: 14px;
+  color: var(--cream);
+}
+
+.request-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-accept, .btn-reject {
+  border: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  font-weight: 800;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.btn-accept { background: var(--lime); color: #122b32; }
+.btn-accept:hover { background: #e3ffb5; }
+
+.btn-reject { background: #ff5c5c33; color: #ff7b7b; border: 1px solid #ff5c5c66; }
+.btn-reject:hover { background: #ff5c5c66; }
+
+/* Tarjeta de Amigo en la Lista */
+.friend-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #0e2730;
+  border: 1px solid #ffffff1a;
+  border-radius: 6px;
+  padding: 12px 16px;
+}
+
+.friend-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-dot-mini {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot-mini.online {
+  background: #53f272;
+  box-shadow: 0 0 8px #53f272aa;
+}
+
+.status-dot-mini.offline {
+  background: #ff4747;
+  box-shadow: 0 0 6px #ff474766;
+}
+
+.friend-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.friend-level {
+  font-size: 10px;
+  color: #93b2b0;
+}

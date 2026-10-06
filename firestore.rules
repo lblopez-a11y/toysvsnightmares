@@ -1,0 +1,117 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function playerPath(uid) {
+      return /databases/$(database)/documents/players/$(uid);
+    }
+
+    function friendPath(ownerUid, friendUid) {
+      return /databases/$(database)/documents/players/$(ownerUid)/friends/$(friendUid);
+    }
+
+    function requestPath(ownerUid, senderUid) {
+      return /databases/$(database)/documents/players/$(ownerUid)/friendRequests/$(senderUid);
+    }
+
+    match /players/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid)
+        && request.resource.data.keys().hasAll(['uid', 'tag', 'displayName', 'schemaVersion', 'experience', 'level', 'coins', 'essence', 'unlockedCharacters', 'selectedCharacter', 'stats', 'receipts', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'tag', 'displayName', 'schemaVersion', 'experience', 'level', 'coins', 'essence', 'unlockedCharacters', 'selectedCharacter', 'stats', 'receipts', 'email', 'photoURL', 'createdAt', 'updatedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.tag is string
+        && request.resource.data.tag.matches('^[A-Z0-9]+#' + uid + '$')
+        && request.resource.data.displayName is string
+        && request.resource.data.experience is number
+        && request.resource.data.level is number
+        && request.resource.data.coins is number
+        && request.resource.data.essence is number
+        && request.resource.data.unlockedCharacters is list
+        && request.resource.data.stats is map
+        && request.resource.data.receipts is list
+        && request.resource.data.createdAt is string
+        && request.resource.data.updatedAt is string;
+      allow update: if isOwner(uid)
+        && request.resource.data.keys().hasAll(['uid', 'tag', 'displayName', 'schemaVersion', 'experience', 'level', 'coins', 'essence', 'unlockedCharacters', 'selectedCharacter', 'stats', 'receipts', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'tag', 'displayName', 'schemaVersion', 'experience', 'level', 'coins', 'essence', 'unlockedCharacters', 'selectedCharacter', 'stats', 'receipts', 'email', 'photoURL', 'createdAt', 'updatedAt'])
+        && request.resource.data.uid == uid
+        && (resource.data.get('tag', '') == ''
+          ? request.resource.data.tag.matches('^[A-Z0-9]+#' + uid + '$')
+          : request.resource.data.tag == resource.data.get('tag', ''))
+        && request.resource.data.createdAt == resource.data.get('createdAt', request.resource.data.createdAt)
+        && request.resource.data.displayName is string
+        && request.resource.data.experience is number
+        && request.resource.data.level is number
+        && request.resource.data.coins is number
+        && request.resource.data.essence is number
+        && request.resource.data.unlockedCharacters is list
+        && request.resource.data.stats is map
+        && request.resource.data.receipts is list
+        && request.resource.data.updatedAt is string;
+      allow delete: if false;
+
+      match /friendRequests/{requestId} {
+        allow read: if isOwner(uid);
+        allow create: if signedIn()
+          && request.auth.uid == requestId
+          && request.auth.uid != uid
+          && request.resource.data.keys().hasOnly(['fromUid', 'fromTag', 'fromName', 'fromLevel', 'status', 'timestamp'])
+          && request.resource.data.fromUid == requestId
+          && request.resource.data.fromTag == get(playerPath(requestId)).data.tag
+          && request.resource.data.fromName == get(playerPath(requestId)).data.displayName
+          && request.resource.data.fromLevel == get(playerPath(requestId)).data.level
+          && request.resource.data.status == 'pending'
+          && request.resource.data.timestamp is timestamp
+          && exists(/databases/$(database)/documents/playerDirectory/$(uid))
+          && !exists(friendPath(requestId, uid));
+        allow delete: if isOwner(uid) && resource.data.status == 'pending';
+        allow update: if false;
+      }
+
+      match /friends/{friendUid} {
+        allow read: if isOwner(uid);
+        allow create: if request.resource.data.keys().hasOnly(['friendUid', 'friendTag', 'friendName', 'friendLevel', 'addedAt'])
+          && request.resource.data.friendUid == friendUid
+          && request.resource.data.friendTag is string
+          && request.resource.data.friendName is string
+          && request.resource.data.friendLevel is number
+          && request.resource.data.addedAt is timestamp
+          && !exists(friendPath(uid, friendUid))
+          && !exists(friendPath(friendUid, uid))
+          && existsAfter(friendPath(uid, friendUid))
+          && existsAfter(friendPath(friendUid, uid))
+          && !existsAfter(requestPath(uid, friendUid))
+          && !existsAfter(requestPath(friendUid, uid))
+          && (
+            (isOwner(uid)
+              && exists(requestPath(uid, friendUid))
+              && get(requestPath(uid, friendUid)).data.fromUid == friendUid)
+            ||
+            (isOwner(friendUid)
+              && exists(requestPath(friendUid, uid))
+              && get(requestPath(friendUid, uid)).data.fromUid == uid)
+          );
+        allow update, delete: if false;
+      }
+    }
+
+    match /playerDirectory/{uid} {
+      allow read: if signedIn();
+      allow create, update: if isOwner(uid)
+        && request.resource.data.keys().hasOnly(['uid', 'tag', 'displayName', 'level'])
+        && request.resource.data.uid == uid
+        && request.resource.data.tag == getAfter(playerPath(uid)).data.tag
+        && request.resource.data.displayName == getAfter(playerPath(uid)).data.displayName
+        && request.resource.data.level == getAfter(playerPath(uid)).data.level;
+      allow delete: if false;
+    }
+  }
+}

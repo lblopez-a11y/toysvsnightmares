@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#132b32">
+  <meta name="description" content="Toys vs. Nightmares. Doce personajes, dos facciones y tres modos de combate 3D contra bots.">
+  <title>Toys vs. Nightmares v0.5 — La guardia nocturna</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c8ee86'/%3E%3Ctext x='5' y='24' font-size='24'%3E✦%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./styles.css">
+  <!-- Versiones fijadas: actualizar y validar ambas dependencias deliberadamente. -->
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+      "firebase/app": "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js",
+      "firebase/auth": "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js", "firebase/functions": "https://www.gstatic.com/firebasejs/12.3.0/firebase-functions.js"
+    } }
+  </script>
+  <link rel="stylesheet" href="lobby.css">
+<link rel="stylesheet" href="deployment.css"></head>
+<body>
+  <canvas id="world" aria-label="Escena 3D de un cuarto de juguetes"></canvas>
+  <div class="vignette" aria-hidden="true"></div>
+  <header id="topbar" class="topbar">
+    <a class="brand" href="./" aria-label="Toys vs. Nightmares, inicio"><span class="brand-mark">✦</span><span>TVN<span class="brand-sub">TOY DEFENSE DIVISION</span></span></a>
+    <div class="build-label"><span class="status-dot"></span> DEFENSA COOPERATIVA <span class="divider">/</span> CONTRA BOTS</div>
+    <div class="profile"><span class="avatar">T</span><span id="profile-name">GUARDIA NOCTURNA</span><button id="sign-out" class="text-button" hidden>Salir</button></div>
+  </header>
+
+  <main>
+    <section id="login-screen" class="screen landing" aria-labelledby="game-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span></span> CUANDO SE APAGAN LAS LUCES</p>
+        <h1 id="game-title"><span>TOYS</span><span class="versus">VS.</span><span class="nightmares">NIGHTMARES</span></h1>
+        <p class="tagline">Pequeños héroes.<br>Una noche demasiado grande.</p>
+        <p class="hero-description">El cuarto es nuestro mundo. La imaginación,<br>nuestra última línea de defensa.</p>
+        <div class="login-actions">
+          <button id="google-login" class="button secondary"><span class="google-g">G</span> Iniciar sesión con Google <span>↗</span></button>
+          <button id="guest-login" class="button primary">Jugar como invitado <span>→</span></button>
+        </div>
+        <p id="auth-hint" class="fineprint">El modo invitado no requiere una cuenta.</p>
+      </div>
+      <aside class="scene-label"><span class="tiny-cross">+</span><div><span class="eyebrow">SECTOR 01</span><strong>La fortaleza de almohadas</strong><span>BASE DE LOS JUGUETES · 22:04</span></div></aside>
+      <div class="edition-stamp">EST.<br><b>2026</b><span>IMAGINATION<br>IS OUR ARMOR</span></div>
+    </section>
+
+    <section id="menu-screen" class="screen menu" hidden aria-label="Menú principal del juego">
+      <!-- Navegación del Menu Principal -->
+      <nav id="lobby-nav">
+        <button class="nav-tab active" data-tab="lobby-home">INICIO</button>
+        <button class="nav-tab" data-tab="social-panel">SOCIAL / AMIGOS</button>
+      </nav>
+
+      <div id="lobby-home"></div>
+
+      <!-- NUEVA PESTAÑA: PANEL SOCIAL -->
+      <div id="social-panel" hidden class="social-panel-shell">
+        <div class="social-header">
+          <h2>SOCIAL <span>✦</span></h2>
+          <div class="my-id-card">
+            <small>TU ID DE JUGADOR</small>
+            <strong id="my-player-id">CARGANDO#0000</strong>
+            <button id="copy-id-btn" class="text-button">Copiar 📋</button>
+          </div>
+        </div>
+
+        <div class="social-grid">
+          <!-- Columna 1: Buscar Amigo -->
+          <div class="social-card">
+            <h3>AÑADIR AMIGO</h3>
+            <p>Ingresa el ID único de tu amigo para enviarle una solicitud.</p>
+            <div class="search-box">
+              <input type="text" id="friend-search-input" placeholder="Ej: GUARDIA#8492" autocomplete="off" />
+              <button id="send-request-btn" class="button primary">Añadir <span>+</span></button>
+            </div>
+            <small id="search-status-msg" class="status-msg"></small>
+          </div>
+
+          <!-- Columna 2: Solicitudes Pendientes -->
+          <div class="social-card">
+            <h3>SOLICITUDES <span id="requests-count" class="badge">0</span></h3>
+            <div id="requests-list" class="social-list">
+              <p class="empty-msg">No tienes solicitudes pendientes.</p>
+            </div>
+          </div>
+
+          <!-- Columna 3: Lista de Amigos (Online / Offline) -->
+          <div class="social-card friends-wide">
+            <h3>MIS AMIGOS (<span id="friends-count">0</span>)</h3>
+            <div id="friends-list" class="social-list">
+              <p class="empty-msg">Aún no has agregado amigos.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="hud" hidden aria-label="Interfaz de combate">
+      <div class="mission"><span class="eyebrow" id="wave-number">OLEADA 1 / 10</span><strong id="mission-title">Conquista</strong><span id="enemy-number">Preparando defensa…</span><div id="base-meter" class="base-meter" role="progressbar" aria-label="Salud del núcleo" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="1000"><i id="base-fill"></i></div><span class="base-caption"><span id="base-label">CAPTURA</span> <b id="base-number">1000 / 1000</b></span><span id="look-hint">WASD mover · Ratón mirar · Esc pausa</span><button id="pause-button" class="text-button">Pausar ⏸</button></div>
+      <div id="wave-banner"><strong></strong><span></span></div><div id="kill-feed"></div><div id="score-number">0 PTS · 0 BAJAS</div><div id="combat-status"></div>
+      <div class="minimap-shell"><canvas id="minimap" width="240" height="240" aria-label="Minimapa: tu posición y coberturas"></canvas><span>N</span><small>SECTOR 01</small></div>
+      <canvas id="crosshair" width="96" height="96" aria-hidden="true"></canvas>
+      <div id="blind-overlay" aria-hidden="true"></div><div id="hit-confirm" aria-hidden="true">×</div><div id="damage-vignette" aria-hidden="true"></div>
+      <div class="vitals"><span class="eyebrow" id="hud-character">CAPITÁN ESPUMA</span><div class="health-line"><span>✚</span><strong id="health-number">100</strong><small id="health-max">/ 125</small></div><div class="meter health" role="progressbar" aria-label="Salud" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><i id="health-fill"></i></div><div class="meter shield" role="progressbar" aria-label="Escudo" aria-valuemin="0" aria-valuemax="50" aria-valuenow="50"><i id="shield-fill"></i></div><small id="shield-number">50 ESCUDO</small></div>
+      <div class="abilities"><div><div id="ability-q" class="cooldown" style="--ready:100%"><span>Q</span></div><small id="ability-name-q">GRANADA</small></div><div><div id="ability-e" class="cooldown" style="--ready:100%"><span>E</span></div><small id="ability-name-e">RESORTE</small></div><div><div id="ability-c" class="cooldown" style="--ready:100%"><span>C</span></div><small id="ability-name-c">HABILIDAD 3</small></div></div>
+      <div class="ammo"><span class="eyebrow" id="hud-weapon">BLASTER DE DARDOS</span><div><strong id="ammo-number">30</strong><span id="ammo-max">/ 30</span></div><small id="ammo-state">R RECARGAR</small></div>
+      <div class="controls-strip"><kbd>CLIC / F</kbd> Disparar <kbd>CLIC DERECHO</kbd> Apuntar <kbd>R</kbd> Recargar <kbd>SHIFT</kbd> Correr <kbd>ESPACIO</kbd> Saltar <kbd>ESC</kbd> Pausa</div>
+    </section>
+    <div id="upgrade-shop" hidden><b>MEJORAS DE OLEADA</b><span id="upgrade-points"></span><button data-upgrade="damage">1 · Daño +10% · 150 pts</button><button data-upgrade="health">2 · Vida +20 · 150 pts</button><button data-upgrade="repair">3 · Cofre +200 · 100 pts</button></div><div id="actor-labels" aria-hidden="true" hidden></div>
+
+    <section id="lock-screen" class="modal-screen" hidden aria-labelledby="lock-title"><div class="panel"><p class="eyebrow">DESPLIEGUE PREPARADO</p><h2 id="lock-title">Tu base te espera.</h2><p id="lock-message" role="status">Haz clic para bloquear el cursor.</p><button id="enter-game" class="button primary">Entrar · Bloquear cursor →</button><button id="lock-menu" class="button secondary">Volver al Menú Principal</button><details class="browser-help"><summary>¿El cursor no se bloquea?</summary><p>La vista previa de ChatGPT o Codex puede impedir esta función. Descarga el acceso directo y ábrelo desde la carpeta Descargas de Windows: usará tu navegador predeterminado.</p><button id="download-shortcut" class="button secondary">Descargar acceso directo para Windows</button><button id="copy-game-url" class="button secondary">Copiar dirección del juego</button><small>También puedes pegar la dirección en una ventana independiente de Chrome, Edge o Firefox. Mantén el servidor del juego encendido.</small></details></div></section>
+    <section id="pause-screen" class="modal-screen" hidden aria-labelledby="pause-title"><div class="panel"><p class="eyebrow">UN RESPIRO</p><h2 id="pause-title">Guardia en pausa.</h2><p>Vuelve al cuarto cuando estés listo.</p><button id="resume" class="button primary">Continuar <span>→</span></button><button id="pause-settings" class="button secondary">Ajustes · Sensibilidad</button><button id="back-menu" class="button secondary">Volver al Menú Principal</button></div></section>
+    <section id="death-screen" class="modal-screen" hidden aria-labelledby="death-title"><div class="panel"><p class="eyebrow">NO ES EL FINAL</p><h2 id="death-title">Aún queda magia.</h2><p>Te eliminó: <strong id="killer-name">—</strong></p><p>Reaparece con salud y munición completas en la base de tu equipo. La partida local queda pausada hasta volver.</p><div class="score-row"><span>PUNTAJE</span><strong id="death-score">0</strong></div><button id="respawn" class="button primary">Reaparecer en la base <span>↻</span></button><button id="death-menu" class="button secondary">Volver al Menú Principal</button></div></section>
+    <section id="result-screen" class="modal-screen" hidden aria-labelledby="result-title"><div class="panel"><p class="eyebrow">FIN DE PARTIDA</p><h2 id="result-title"></h2><p id="result-message"></p><p id="result-score"></p><p id="result-rewards"></p><p id="result-save">Guardando…</p><button id="result-replay" class="button primary">Elegir bando y jugar otra →</button><button id="result-menu" class="button secondary">Volver al Menú Principal</button></div></section>
+    <section id="error-screen" class="modal-screen" hidden role="alert"><div class="panel"><p class="eyebrow">ALGO SALIÓ MAL</p><h2>No pudimos abrir el cuarto.</h2><p id="error-message"></p><button id="retry" class="button primary">Reintentar</button></div></section>
+  </main>
+  <footer id="footer"><span>UN MUNDO ENORME. UN HÉROE A TU ESCALA.</span><span>v0.5 · 3D EN TU NAVEGADOR <i>✦</i> TOYS VS. NIGHTMARES</span></footer>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+  <div id="loading" class="loading"><span class="brand-mark">✦</span><p>Encendiendo la imaginación…</p></div>
+  <noscript><div class="noscript">Activa JavaScript para abrir este juego 3D.</div></noscript>
+  <!-- Captura incluso errores de red al importar Three.js. -->
+  <script type="module">
+    import('./src/main.js').catch(error => {
+      console.error(error);
+      document.querySelector('#loading').hidden = true;
+      document.querySelector('#error-screen').hidden = false;
+      document.querySelector('#error-message').textContent = 'No se cargó el motor. Comprueba tu conexión y abre el proyecto desde localhost o HTTPS.';
+      document.querySelector('#retry').onclick = () => location.reload();
+    });
+  </script>
+</body>
+</html>
+
+
+
