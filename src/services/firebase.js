@@ -2,6 +2,12 @@ import { firebaseConfig } from '../config.js';
 import {applyResult,normalizeProfile,profileDefaults,purchase} from '../../functions/shared/progression.js';
 import {CHARACTERS,MODES} from '../../functions/shared/catalog.js';
 
+export function extractUid(rawId){
+  if(typeof rawId!=='string')return '';
+  const value=rawId.trim(),separator=value.lastIndexOf('#');
+  return (separator>=0?value.slice(separator+1):value).trim();
+}
+
 function generatePlayerTag(displayName,uid){
   const cleanName=String(displayName||'Jugador').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]/g,'').slice(0,16).toUpperCase()||'JUGADOR';
   return `${cleanName}#${uid}`;
@@ -132,9 +138,10 @@ export class AccountService {
     await updateDoc(doc(this.db,'squadInvites',inviteId),{status});
   }
   watchPresence(uid,onValue,onError) {
-    if(!this.db||typeof uid!=='string'||!uid)throw new Error('Presencia no disponible.');
+    const cleanUid=extractUid(uid);
+    if(!this.db||!cleanUid)throw new Error('Presencia no disponible.');
     return this.firestoreSDK.onSnapshot(
-      this.firestoreSDK.doc(this.db,'playerPresence',uid),
+      this.firestoreSDK.doc(this.db,'playerPresence',cleanUid),
       snapshot=>onValue(snapshot.exists()?snapshot.data():null),
       onError,
     );
@@ -150,8 +157,9 @@ export class AccountService {
   }
   startPresence(user,onError) {
     this.stopPresence();
-    if(!user||!this.db)return;
-    const {doc,setDoc,serverTimestamp}=this.firestoreSDK,ref=doc(this.db,'playerPresence',user.uid);
+    const uid=extractUid(user?.uid);
+    if(!uid||!this.db)return;
+    const {doc,setDoc,serverTimestamp}=this.firestoreSDK,ref=doc(this.db,'playerPresence',uid);
     const write=async online=>{
       try{await setDoc(ref,{online,lastSeen:serverTimestamp()},{merge:true});}
       catch(error){onError?.(error);}

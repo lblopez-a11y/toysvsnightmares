@@ -1,6 +1,20 @@
 import {renderPlayerTag} from './player-tag.js';
+import {extractUid} from './services/firebase.js';
 
 const $=id=>document.getElementById(id);
+
+function getFriendUid(friendData){
+ return extractUid(friendData?.friendUid||friendData?.uid||friendData?.friendTag||friendData?.tag||friendData?.id);
+}
+
+export function isFriendOnline(friendData,presenceMap){
+ const friendUid=getFriendUid(friendData);
+ if(!friendUid)return false;
+ const status=presenceMap instanceof Map?presenceMap.get(friendUid):presenceMap?.[friendUid];
+ if(!status)return false;
+ const lastSeen=status.lastSeen?.toMillis?.()??status.lastSeen;
+ return status.online===true&&typeof lastSeen==='number'&&Date.now()-lastSeen<65000;
+}
 
 export class SocialSystem {
  constructor(account,notify=()=>{}){
@@ -25,6 +39,10 @@ export class SocialSystem {
    this.renderList(this.friendsList,[],'Aún no has agregado amigos.');this.friendsCount.textContent='0';return;
   }
   this.account.startPresence?.(user,error=>this.notify(error.message||'No se pudo actualizar tu presencia.'));
+  this.presenceRefreshInterval=setInterval(()=>{
+   if(revision!==this.revision)return;
+   this.renderFriends(this.friends);this.renderInviteFriends();
+  },15000);
   this.myPlayerId.textContent=profile?.tag||'CARGANDO...';this.sendBtn.disabled=!this.searchInput.value.trim();
   this.setStatus('');
   if(profile?.tag)this.myPlayerId.textContent=profile.tag;
@@ -80,16 +98,18 @@ export class SocialSystem {
 
  renderFriends(items){
   this.friends=items;
-  const currentIds=new Set(items.map(item=>item.id));
+  const currentIds=new Set(items.map(getFriendUid).filter(Boolean));
   for(const [uid,unsubscribe] of this.presenceUnsubs)if(!currentIds.has(uid)){unsubscribe?.();this.presenceUnsubs.delete(uid);this.presence.delete(uid);}
-  for(const item of items)if(!this.presenceUnsubs.has(item.id)){
+  for(const item of items){
+   const uid=getFriendUid(item);
+   if(!uid||this.presenceUnsubs.has(uid))continue;
    const revision=this.revision;
    try{
-    const unsubscribe=this.account.watchPresence(item.id,value=>{
+    const unsubscribe=this.account.watchPresence(uid,value=>{
      if(revision!==this.revision)return;
-     this.presence.set(item.id,value);this.renderFriends(this.friends);this.renderInviteFriends();
+     this.presence.set(uid,value);this.renderFriends(this.friends);this.renderInviteFriends();
     },error=>{if(revision===this.revision)this.notify(error.message||'No se pudo consultar el estado de un amigo.');});
-    this.presenceUnsubs.set(item.id,unsubscribe);
+    this.presenceUnsubs.set(uid,unsubscribe);
    }catch(error){this.notify(error.message||'No se pudo consultar el estado de un amigo.');}
   }
   this.friendsCount.textContent=String(items.length);
@@ -97,20 +117,16 @@ export class SocialSystem {
   const rows=items.map(item=>{
    const row=document.createElement('div');row.className='friend-item';
    const info=document.createElement('div');info.className='friend-info';
-   const online=this.isOnline(this.presence.get(item.id));
+   const uid=getFriendUid(item);
+   const online=isFriendOnline(item,this.presence);
    const dot=document.createElement('span');dot.className=`status-dot-mini ${online?'online':'offline'}`;
    const details=document.createElement('div'),name=document.createElement('div'),status=document.createElement('div'),identity=document.createElement('span');
    name.className='friend-name';identity.textContent=item.friendName||item.friendTag||item.id;name.append(identity);
-   name.insertAdjacentHTML('beforeend',renderPlayerTag({tag:item.friendTag}));
+   name.insertAdjacentHTML('beforeend',renderPlayerTag({tag:item.friendTag||item.tag}));
    status.className='friend-level';status.textContent=`${online?'En línea':'Desconectado'} · Nivel ${item.friendLevel||1}`;
    details.append(name,status);info.append(dot,details);row.append(info);return row;
   });
   this.friendsList.replaceChildren(...rows);
- }
-
- isOnline(presence){
-  const lastSeen=presence?.lastSeen?.toMillis?.()??(typeof presence?.lastSeen==='number'?presence.lastSeen:NaN);
-  return presence?.online===true&&Number.isFinite(lastSeen)&&Date.now()-lastSeen<65000;
  }
 
  setInviteModal(modal){
@@ -137,16 +153,17 @@ export class SocialSystem {
   if(!this.user){this.renderList(container,[],'Inicia sesión para invitar amigos.');return;}
   if(!this.friends.length){this.renderList(container,[],'Agrega amigos desde SOCIAL para poder invitarlos.');return;}
   const rows=this.friends.map(friend=>{
-   const online=this.isOnline(this.presence.get(friend.id));
+   const uid=getFriendUid(friend);
+   const online=isFriendOnline(friend,this.presence);
    const row=document.createElement('div');row.className='invite-friend';
    const identity=document.createElement('div');identity.className='invite-friend-identity';
    const name=document.createElement('div');name.className='invite-friend-name';
    const displayName=document.createElement('span');displayName.textContent=friend.friendName||friend.friendTag||friend.id;name.append(displayName);
-   name.insertAdjacentHTML('beforeend',renderPlayerTag({tag:friend.friendTag}));
-   const tag=document.createElement('small');tag.className='invite-friend-tag';tag.textContent=friend.friendTag||'';
+   name.insertAdjacentHTML('beforeend',renderPlayerTag({tag:friend.friendTag||friend.tag}));
+   const tag=document.createElement('small');tag.className='invite-friend-tag';tag.textContent=friend.friendTag||friend.tag||'';
    identity.append(name,tag);
    const invited=this.sentInvites.has(friend.id);
-   const button=document.createElement('button');button.type='button';button.className='button primary';button.dataset.inviteUid=friend.id;button.disabled=!online||invited;button.textContent=invited?'Enviada':online?'Invitar':'Desconectado';
+   const button=document.createElement('button');button.type='button';button.className='button primary';button.dataset.inviteUid=uid;button.disabled=!online||invited;button.textContent=invited?'Enviada':online?'Invitar':'Desconectado';
    row.append(identity,button);return row;
   });
   container.replaceChildren(...rows);
@@ -193,7 +210,7 @@ export class SocialSystem {
  }
 
  setStatus(message){if(this.statusMsg)this.statusMsg.textContent=message;}
- disconnect(){for(const unsubscribe of this.unsubscribers)unsubscribe?.();this.unsubscribers=[];for(const unsubscribe of this.presenceUnsubs.values())unsubscribe?.();this.presenceUnsubs.clear();this.presence.clear();document.getElementById('invite-toast')?.remove();}
+ disconnect(){clearInterval(this.presenceRefreshInterval);this.presenceRefreshInterval=null;for(const unsubscribe of this.unsubscribers)unsubscribe?.();this.unsubscribers=[];for(const unsubscribe of this.presenceUnsubs.values())unsubscribe?.();this.presenceUnsubs.clear();this.presence.clear();document.getElementById('invite-toast')?.remove();}
  dispose(){this.disconnect();this.account.stopPresence?.();this.abort.abort();this.user=null;}
 }
 
