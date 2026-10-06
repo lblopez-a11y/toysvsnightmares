@@ -1,5 +1,7 @@
-export const ADMIN_ID='LAUTAROLOPEZ#ujCQFK9v1BaDtqj0G5cnjEiEAC02';
+export const ADMIN_TAG='LAUTAROLOPEZ#ujCQFK9v1BaDtqj0G5cnjEiEAC02';
 
-export function isAdminPlayer(playerData){
-  return playerData?.tag===ADMIN_ID;
+export function renderPlayerTag(player){
+  if(!player)return '';
+  const tag=player.tag||player.id||player.playerTag||'';
+  return tag===ADMIN_TAG?'<span class="badge-admin-legendary">👑 ADMIN</span>':'';
 }

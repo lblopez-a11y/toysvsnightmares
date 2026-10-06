@@ -1,4 +1,4 @@
-import {isAdminPlayer} from './player-tag.js';
+import {renderPlayerTag} from './player-tag.js';
 
 const $=id=>document.getElementById(id);
 
@@ -101,7 +101,7 @@ export class SocialSystem {
    const dot=document.createElement('span');dot.className=`status-dot-mini ${online?'online':'offline'}`;
    const details=document.createElement('div'),name=document.createElement('div'),status=document.createElement('div'),identity=document.createElement('span');
    name.className='friend-name';identity.textContent=item.friendName||item.friendTag||item.id;name.append(identity);
-   if(isAdminPlayer({tag:item.friendTag})){const badge=document.createElement('span');badge.className='badge-admin';badge.textContent='ADMIN';name.append(badge);}
+   name.insertAdjacentHTML('beforeend',renderPlayerTag({tag:item.friendTag}));
    status.className='friend-level';status.textContent=`${online?'En línea':'Desconectado'} · Nivel ${item.friendLevel||1}`;
    details.append(name,status);info.append(dot,details);row.append(info);return row;
   });
@@ -142,7 +142,7 @@ export class SocialSystem {
    const identity=document.createElement('div');identity.className='invite-friend-identity';
    const name=document.createElement('div');name.className='invite-friend-name';
    const displayName=document.createElement('span');displayName.textContent=friend.friendName||friend.friendTag||friend.id;name.append(displayName);
-   if(isAdminPlayer({tag:friend.friendTag})){const badge=document.createElement('span');badge.className='badge-admin';badge.textContent='ADMIN';name.append(badge);}
+   name.insertAdjacentHTML('beforeend',renderPlayerTag({tag:friend.friendTag}));
    const tag=document.createElement('small');tag.className='invite-friend-tag';tag.textContent=friend.friendTag||'';
    identity.append(name,tag);
    const invited=this.sentInvites.has(friend.id);

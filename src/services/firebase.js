@@ -157,7 +157,7 @@ export class AccountService {
       catch(error){onError?.(error);}
     };
     void write(true);
-    const heartbeat=setInterval(()=>void write(true),25000);
+    const heartbeat=setInterval(()=>void write(true),30000);
     const markOffline=()=>void write(false);
     window.addEventListener('pagehide',markOffline);
     this.presenceCleanup=()=>{

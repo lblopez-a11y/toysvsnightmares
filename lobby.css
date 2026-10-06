@@ -234,19 +234,29 @@ body[data-state="menu"] .vignette{background:linear-gradient(90deg,#0b242bc9,tra
   color: #93b2b0;
 }
 
-.badge-admin {
-  display: inline-block;
+.badge-admin-legendary {
   margin-left: 6px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: #ff4757;
-  color: white;
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 1.2;
+  padding: 3px 8px;
+  border: 1px solid #fff3a0;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #ffe066 0%, #f5af19 50%, #e65c00 100%);
+  color: #1a0f00;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  box-shadow: 0 0 10px rgba(245, 175, 25, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  animation: pulse-legendary 2s infinite alternate;
   vertical-align: middle;
 }
-.badge-admin[hidden] { display: none; }
+
+@keyframes pulse-legendary {
+  0% { box-shadow: 0 0 8px rgba(245, 175, 25, 0.5); transform: scale(1); }
+  100% { box-shadow: 0 0 16px rgba(255, 224, 102, 0.9); transform: scale(1.03); }
+}
 
 #invite-modal[hidden] { display: none; }
 #invite-modal .panel { max-height: min(80vh, 640px); overflow-y: auto; }
