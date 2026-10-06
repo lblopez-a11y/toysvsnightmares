@@ -162,7 +162,7 @@ export class SocialSystem {
    name.insertAdjacentHTML('beforeend',renderPlayerTag({tag:friend.friendTag||friend.tag}));
    const tag=document.createElement('small');tag.className='invite-friend-tag';tag.textContent=friend.friendTag||friend.tag||'';
    identity.append(name,tag);
-   const invited=this.sentInvites.has(friend.id);
+   const invited=this.sentInvites.has(uid);
    const button=document.createElement('button');button.type='button';button.className='button primary';button.dataset.inviteUid=uid;button.disabled=!online||invited;button.textContent=invited?'Enviada':online?'Invitar':'Desconectado';
    row.append(identity,button);return row;
   });

@@ -117,17 +117,18 @@ export class AccountService {
   }
   async sendSquadInvite(targetUid) {
     if(!this.user||!this.db)throw new Error('Inicia sesión para invitar amigos.');
-    if(typeof targetUid!=='string'||!targetUid||targetUid===this.user.uid)throw new Error('Jugador inválido.');
-    const {collection,doc,getDoc,setDoc,serverTimestamp}=this.firestoreSDK,fromUid=this.user.uid;
+    const toUid=extractUid(targetUid),fromUid=extractUid(this.user.uid);
+    if(!toUid||!fromUid||toUid===fromUid)throw new Error('Jugador inválido.');
+    const {collection,doc,getDoc,setDoc,serverTimestamp}=this.firestoreSDK;
     const inviteRef=doc(collection(this.db,'squadInvites'));
     const [senderSnap,targetFriendSnap]=await Promise.all([
       getDoc(doc(this.db,'players',fromUid)),
-      getDoc(doc(this.db,'players',fromUid,'friends',targetUid)),
+      getDoc(doc(this.db,'players',fromUid,'friends',toUid)),
     ]);
     if(!senderSnap.exists()||!targetFriendSnap.exists())throw new Error('Solo puedes invitar a un amigo.');
     const sender=senderSnap.data();
     await setDoc(inviteRef,{
-      fromUid,toUid:targetUid,fromName:sender.displayName||'Jugador',fromTag:sender.tag||'',
+      fromUid,toUid,fromName:sender.displayName||'Jugador',fromTag:sender.tag||'',
       status:'pending',createdAt:serverTimestamp(),
     });
   }
@@ -147,10 +148,15 @@ export class AccountService {
     );
   }
   watchIncomingSquadInvites(uid,onValue,onError) {
-    if(!this.db||typeof uid!=='string'||!uid)throw new Error('Invitaciones no disponibles.');
+    const cleanUid=extractUid(uid);
+    if(!this.db||!cleanUid)throw new Error('Invitaciones no disponibles.');
     const {collection,query,where}=this.firestoreSDK;
     return this.firestoreSDK.onSnapshot(
-      query(collection(this.db,'squadInvites'),where('toUid','==',uid)),
+      query(
+        collection(this.db,'squadInvites'),
+        where('toUid','==',cleanUid),
+        where('status','==','pending'),
+      ),
       snapshot=>onValue(snapshot.docs.map(item=>({...item.data(),id:item.id}))),
       onError,
     );
