@@ -10,7 +10,7 @@ import {WebSocketServer,WebSocket} from 'ws';
 
 const root=path.dirname(fileURLToPath(import.meta.url));
 const types={'.html':'text/html','.css':'text/css','.js':'text/javascript','.json':'application/json'};
-const port=Number(process.env.PORT||4173),roomMembers=new Map();
+const port=Number(process.env.PORT||10000),host='0.0.0.0',roomMembers=new Map();
 const server=http.createServer(async(req,res)=>{
  try{
   if(!['GET','HEAD'].includes(req.method)){res.writeHead(405);res.end();return;}
@@ -102,4 +102,4 @@ server.on('upgrade',async(req,socket,head)=>{
   if(!socket.destroyed){socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');socket.destroy();}
  }
 });
-server.listen(port,'127.0.0.1',()=>console.log(`Toys vs. Nightmares: http://localhost:${port}`));
+server.listen(port,host,()=>console.log(`Servidor corriendo en http://${host}:${port}`));
