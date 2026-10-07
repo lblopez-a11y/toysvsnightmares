@@ -63,7 +63,7 @@ export class Battle extends ModeSystems {
   if(typeof squadId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(squadId))throw new Error('Sala de escuadrón inválida.');
   if(!uid||![squad.leaderUid,squad.memberUid].includes(uid))throw new Error('No perteneces a este escuadrón.');
   const leader=uid===squad.leaderUid;
-  this.stopSquadSync();this.squadSync={id:squadId,uid,leader,remoteUid:leader?squad.memberUid:squad.leaderUid,remoteState:null,socket:null,gameTimer:0,playerTimer:0,fireSeq:0,abilitySeq:[0,0,0],reloadSeq:0,upgradeSeq:[0,0,0],remoteFireSeq:0,remoteReloadSeq:0,remoteUpgradeSeq:[0,0,0],remoteCharge:0,remoteWasFiring:false,shots:[],shotSeqs:new Map(),seenShots:new Map(),errorShown:false};
+  this.stopSquadSync();this.squadSync={id:squadId,uid,leader,remoteUid:leader?squad.memberUid:squad.leaderUid,remoteState:null,socket:null,gameTimer:0,playerTimer:0,lastPlayerMoveSentAt:null,fireSeq:0,abilitySeq:[0,0,0],reloadSeq:0,upgradeSeq:[0,0,0],remoteFireSeq:0,remoteReloadSeq:0,remoteUpgradeSeq:[0,0,0],remoteCharge:0,remoteWasFiring:false,shots:[],shotSeqs:new Map(),seenShots:new Map(),errorShown:false};
   const sync=this.squadSync;
   sync.connectionPromise=account.connectSquadGame(squadId,{
    onMessage:packet=>{
@@ -135,7 +135,11 @@ export class Battle extends ModeSystems {
    playing:sync.playing??(this.engine.state.value==='playing'),
   };
   if(sync.socket)try{
-   sync.socket.send('player:move',data);
+   const now=performance.now();
+   if(sync.lastPlayerMoveSentAt===null||now-sync.lastPlayerMoveSentAt>=50){
+    sync.socket.send('player:move',data);
+    sync.lastPlayerMoveSentAt=now;
+   }
    if(data.firing||data.fireSeq>(sync.lastSentFireSeq||0)){
     sync.socket.send('player:fire',{fireSeq:data.fireSeq,firing:data.firing,yaw:data.yaw,pitch:data.pitch});
     sync.lastSentFireSeq=data.fireSeq;
@@ -146,7 +150,7 @@ export class Battle extends ModeSystems {
   const sync=this.squadSync;if(!sync)return;
   if(!sync.leader){
    this.collectSquadActions(dt);sync.playerTimer-=dt;
-   if(sync.playerTimer<=0){this.publishSquadPlayer();sync.playerTimer=.08;}
+   if(sync.playerTimer<=0){this.publishSquadPlayer();sync.playerTimer=.05;}
    return;
   }
   this.applyRemoteSquadPlayer(dt);
