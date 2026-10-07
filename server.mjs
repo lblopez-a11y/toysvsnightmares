@@ -3,7 +3,7 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {initializeApp,applicationDefault,getApps} from 'firebase-admin/app';
+import {initializeApp,applicationDefault,cert,getApps} from 'firebase-admin/app';
 import {getAuth} from 'firebase-admin/auth';
 import {getFirestore} from 'firebase-admin/firestore';
 import {WebSocketServer,WebSocket} from 'ws';
@@ -26,7 +26,21 @@ const server=http.createServer(async(req,res)=>{
 
 let adminAuth,firestore;
 function getAdminServices(){
- if(!getApps().length)initializeApp({credential:applicationDefault()});
+ if(!getApps().length){
+  const serviceAccountValue=process.env.FIREBASE_SERVICE_ACCOUNT;
+  let credential=applicationDefault();
+  if(serviceAccountValue){
+   let serviceAccount;
+   try{serviceAccount=typeof serviceAccountValue==='string'?JSON.parse(serviceAccountValue):serviceAccountValue;}
+   catch(error){throw new Error('FIREBASE_SERVICE_ACCOUNT no contiene JSON válido.',{cause:error});}
+   if(!serviceAccount||typeof serviceAccount!=='object'||Array.isArray(serviceAccount)||typeof serviceAccount.project_id!=='string'||typeof serviceAccount.client_email!=='string'||typeof serviceAccount.private_key!=='string'){
+    throw new Error('FIREBASE_SERVICE_ACCOUNT debe contener project_id, client_email y private_key.');
+   }
+   serviceAccount.private_key=serviceAccount.private_key.replace(/\\n/g,'\n');
+   credential=cert(serviceAccount);
+  }
+  initializeApp({credential});
+ }
  adminAuth??=getAuth();firestore??=getFirestore();
  return {adminAuth,firestore};
 }
@@ -58,21 +72,26 @@ server.on('upgrade',async(req,socket,head)=>{
      authenticating=false;
      void (async()=>{
       const {adminAuth:auth,firestore:db}=getAdminServices();
-      const identity=await auth.verifyIdToken(message.token),squadSnapshot=await db.doc(`squadLobbies/${squadId}`).get();
+      const identity=await auth.verifyIdToken(message.token);
+      const activeRoom=roomMembers.get(squadId);
+      const squadSnapshot=await db.collection('squadLobbies').doc(squadId).get();
       if(client.readyState!==WebSocket.OPEN)return;
       if(!squadSnapshot.exists){send(client,{type:'error',message:'No perteneces a esta sala.'});client.close(1008,'not a squad member');return;}
       const squad=squadSnapshot.data();
       if(typeof squad.leaderUid!=='string'||typeof squad.memberUid!=='string'||squad.leaderUid===squad.memberUid||![squad.leaderUid,squad.memberUid].includes(identity.uid)){
        send(client,{type:'error',message:'No perteneces a esta sala.'});client.close(1008,'not a squad member');return;
       }
+      if(activeRoom?.squad&&(activeRoom.squad.leaderUid!==squad.leaderUid||activeRoom.squad.memberUid!==squad.memberUid)){
+       send(client,{type:'error',message:'Los integrantes de la sala cambiaron. Vuelve a crear el escuadrón.'});client.close(1008,'squad membership changed');return;
+      }
       clearTimeout(authTimeout);
-      const room=roomMembers.get(squadId)||new Map();roomMembers.set(squadId,room);
+      const room=activeRoom||new Map();room.squad={leaderUid:squad.leaderUid,memberUid:squad.memberUid};roomMembers.set(squadId,room);
       if(room.has(identity.uid)){send(client,{type:'error',message:'Este usuario ya está conectado a la sala.'});client.close(1008,'duplicate session');return;}
       client.uid=identity.uid;client.squadId=squadId;client.room=room;client.isLeader=identity.uid===squad.leaderUid;client.messageWindow=Date.now();client.messageCount=0;room.set(identity.uid,client);
       console.log('[WebSocket] Jugador conectado a sala:',squadId,identity.uid);
       send(client,{type:'ready',squadId,uid:identity.uid,members:[...room.keys()]});
       for(const member of room.values())if(member!==client)send(member,{type:'member:joined',uid:identity.uid});
-     })().catch(error=>{console.error('No se pudo autenticar el WebSocket de escuadrón:',error);send(client,{type:'error',message:'No se pudo autenticar la sala.'});client.close(1011,'authentication failed');});
+     })().catch(error=>{console.error('[WebSocket] Falló la verificación del token o de Firestore:',error);send(client,{type:'error',message:'No se pudo autenticar la sala.'});client.close(1011,'authentication failed');});
      return;
     }
     if(!client.room){client.close(1008,'authentication required');return;}
