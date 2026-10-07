@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {GAME} from './config.js';
+import {audio} from './audio.js';
 import {ObjectPool} from './core.js';
 import {BotSteering,resetStuck,sampleStuck} from './ai-steering.js';
 import {MINIONS,waveEnemyId} from './minions.js';
@@ -80,11 +81,17 @@ export class Battle extends ModeSystems {
   this.squadSync.playing=playing;
   this.publishSquadPlayer(true);
  }
- collectSquadActions(){
+ collectSquadActions(dt){
   const input=this.engine.input,sync=this.squadSync;
-  if(input.consumeAction('Fire'))sync.fireSeq++;
+  const weapon=this.player.spec.weapon,pressed=input.consumeAction('Fire'),held=input.firing||input.down('KeyF'),status=this.player.status;
+  if(pressed)sync.fireSeq++;
+  sync.localFireTimer=Math.max(0,(sync.localFireTimer||0)-dt);
+  const canFire=this.player.active&&this.player.shotTimer<=0&&this.player.reload<=0&&!status.cloak&&!status.stun&&!status.sleep&&(!weapon.magazine||this.player.ammo>0);
+  if(weapon.type==='charge'){if(!held&&(sync.localWasFiring||pressed)&&canFire)audio.play('shoot');}
+  else if((held||pressed)&&canFire&&sync.localFireTimer<=0){audio.play('shoot');sync.localFireTimer=weapon.interval;}
+  sync.localWasFiring=held;
   ['KeyQ','KeyE','KeyC'].forEach((key,index)=>{if(input.consumeAction(key)){sync.abilitySeq[index]++;const effect=this.player.spec.abilities[index]?.effect;if(['spring','flight','hover','blink','charge'].includes(effect))useAbility(this,this.player,index);}});
-  if(input.consumeAction('KeyR'))sync.reloadSeq++;
+  if(input.consumeAction('KeyR')){sync.reloadSeq++;if(weapon.magazine&&this.player.ammo<weapon.magazine&&this.player.reload<=0)audio.play('reload');}
   ['Digit1','Digit2','Digit3'].forEach((key,index)=>{if(input.consumeAction(key))sync.upgradeSeq[index]++;});
  }
  publishSquadPlayer(force=false){
@@ -103,7 +110,7 @@ export class Battle extends ModeSystems {
  updateSquadSync(dt){
   const sync=this.squadSync;if(!sync)return;
   if(!sync.leader){
-   this.collectSquadActions();sync.playerTimer-=dt;
+   this.collectSquadActions(dt);sync.playerTimer-=dt;
    if(sync.playerTimer<=0){this.publishSquadPlayer();sync.playerTimer=.08;}
    return;
   }
@@ -222,6 +229,7 @@ export class Battle extends ModeSystems {
   }
   this.playSquadShots(state.shots);
   const saved=state.match;if(saved){
+   if(saved.wave>this.match.wave||saved.baseHealth<this.match.baseHealth)audio.play('alarm');
    for(const key of ['wave','remaining','phase','timer','baseHealth','kills','score','sector','capture','contested','points','winner','wavePoints','upgrades'])if(saved[key]!==undefined)this.match[key]=saved[key];
    if(Number.isFinite(saved.duration)){this.time=saved.duration;this.result.duration=saved.duration;}
    if(this.match.sector!==this.lastSquadSector){this.lastSquadSector=this.match.sector;this.setObjective();}
@@ -232,7 +240,7 @@ export class Battle extends ModeSystems {
 
  resetPlayer(){const p=this.spawnPoint(this.player.team,this.playerSpawnIndex||1);this.engine.position.set(p.x,0,p.z);this.player.spawn(p.x,p.z);this.player.position=this.engine.position;this.lastPlayerPosition.copy(this.player.position);this.playerVelocity={vx:0,vy:0,vz:0};this.player.maxHealth=this.player.spec.hp+(this.match.upgrades.health||0)*20;this.player.health=this.player.maxHealth;this.player.status.spawn=3;this.player.sinceDamage=0;this.player.portalCooldown=0;this.engine.verticalSpeed=0;this.engine.input.yaw=Math.atan2(this.objective.x-p.x,this.objective.z-p.z)-Math.PI;this.engine.input.pitch=.035;this.engine.playerVisual.position.copy(this.engine.position);this.engine.playerVisual.visible=true;this.player.syncHitboxes();this.charge=0;this.updateHUD();}
  stop(){this.stopSquadSync();this.started=false;this.objectiveLabel.hidden=true;for(const actor of this.actors)actor.silhouette.visible=false;for(const bank of Object.values(this.banks))bank.releaseAll();for(const pool of [this.projectiles,this.zones,this.drops,this.barriers,this.portals])pool.releaseAll();this.effects.reset();this.damageNumbers.reset();this.world.ambientToys.forEach(m=>m.visible=true);this.captureRing.visible=false;this.arena.visible=false;this.rain.visible=false;this.world.core.visible=true;this.world.coreLabel.visible=true;for(const p of this.world.portals){p.group.visible=true;p.label.visible=true;}this.weather=0;this.applyWeather(0);const blind=document.querySelector('#blind-overlay');if(blind)blind.style.opacity='0';}
- spawnWave(){const total=this.match.beginWave();for(let i=0;i<total;i++){const actor=this.banks.nightmares.acquire();if(!actor)throw new Error('Pool de horda agotado');const boss=i===0&&this.match.wave%3===0;if(boss)actor.originalId=actor.id;this.spawnActor(actor,boss,i);this.effects.burst(actor.position,'#c192ed',12);}this.ui.banner(`OLEADA ${this.match.wave} / 10`,this.match.wave%3===0?'¡TITÁN DE PORCELANA! · 1000 HP':`${total} pesadillas · Protege el cofre`);}
+ spawnWave(){const total=this.match.beginWave();audio.play('alarm');for(let i=0;i<total;i++){const actor=this.banks.nightmares.acquire();if(!actor)throw new Error('Pool de horda agotado');const boss=i===0&&this.match.wave%3===0;if(boss)actor.originalId=actor.id;this.spawnActor(actor,boss,i);this.effects.burst(actor.position,'#c192ed',12);}this.ui.banner(`OLEADA ${this.match.wave} / 10`,this.match.wave%3===0?'¡TITÁN DE PORCELANA! · 1000 HP':`${total} pesadillas · Protege el cofre`);}
  nearestWalkable(x,z){const at=this.nav.index(x,z);if(this.nav.walkable[at])return {x,z};let best=Infinity,result={x:0,z:12};for(let i=0;i<this.nav.walkable.length;i++)if(this.nav.walkable[i]){const px=this.nav.coordinate(i%this.nav.n),pz=this.nav.coordinate(Math.floor(i/this.nav.n)),d=(x-px)**2+(z-pz)**2;if(d<best){best=d;result.x=px;result.z=pz;}}return result;}
  fixedUpdate(dt){
   if(!this.started)return;if(dt>0){this.playerVelocity.vx=(this.player.position.x-this.lastPlayerPosition.x)/dt;this.playerVelocity.vy=(this.player.position.y-this.lastPlayerPosition.y)/dt;this.playerVelocity.vz=(this.player.position.z-this.lastPlayerPosition.z)/dt;}this.lastPlayerPosition.copy(this.player.position);this.time+=dt;this.result.duration=this.time;const input=this.engine.input;

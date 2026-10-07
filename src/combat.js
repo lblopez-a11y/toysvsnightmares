@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {aimModifiers,sampleSpread} from './aim.js';
+import {audio} from './audio.js';
 import {clearSight} from './navigation.js';
 
 /** Armas y daño compartidos por los 12 personajes y ambos equipos. */
@@ -13,16 +14,16 @@ export class Combat {
  push(actor,point,distance){const dx=actor.position.x-point.x,dz=actor.position.z-point.z,l=Math.hypot(dx,dz)||1;for(let d=0;d<distance;d+=.25){const x=actor.position.x+dx/l*.25,z=actor.position.z+dz/l*.25;if(this.blocked(x,z,actor.position.y))break;actor.position.x=x;actor.position.z=z;}}
  pull(actor,point,distance){this.temp.set(actor.position.x+(actor.position.x-point.x),actor.position.y,actor.position.z+(actor.position.z-point.z));this.push(actor,this.temp,distance);}
  moveMultiplier(actor){const s=actor.status;if(s.stun||s.sleep||s.turret||s.hover)return 0;let v=actor.spec.speed*(s.slow?.55:1)*(s.haste?1.3:1);if(actor.id==='titan'&&actor.health<actor.maxHealth*.3)v*=1.25;return v;}
- reloadWeapon(actor=this.player){if(actor.spec.weapon.magazine&&actor.ammo<actor.spec.weapon.magazine&&actor.reload<=0)actor.reload=1.65*(actor.id==='captain'&&actor.moving?.8:1);}
+ reloadWeapon(actor=this.player){if(actor.spec.weapon.magazine&&actor.ammo<actor.spec.weapon.magazine&&actor.reload<=0){actor.reload=1.65*(actor.id==='captain'&&actor.moving?.8:1);if(actor===this.player||actor.remoteHuman)audio.play('reload');}}
  attack(actor,target=null,chargedDamage=null){
   const s=actor.status,w=actor.spec.weapon;if(!actor.active||actor.shotTimer>0||actor.reload>0||s.cloak||s.stun||s.sleep)return;
   const minionAimError=actor.spec.minion?(Math.random()-.5)*.35:0;
   if(w.magazine&&actor.ammo<=0){this.reloadWeapon(actor);return;}if(w.magazine)actor.ammo--;
-  actor.shotTimer=w.interval/(s.turret?1.5:1);let damage=chargedDamage||w.damage;if(s.power)damage*=1.15;if(s.weaken)damage*=.9;if(actor===this.player||actor.remoteHuman)damage*=1+this.match.upgrades.damage*.1;this.recordSquadAttack?.(actor);
+  actor.shotTimer=w.interval/(s.turret?1.5:1);let damage=chargedDamage||w.damage;if(s.power)damage*=1.15;if(s.weaken)damage*=.9;if(actor===this.player||actor.remoteHuman)damage*=1+this.match.upgrades.damage*.1;if(actor===this.player||actor.remoteHuman)audio.play('shoot');this.recordSquadAttack?.(actor);
   if(actor===this.player){this.recoil=aimModifiers(this.engine.input.aiming).recoil;this.engine.camera.updateMatrixWorld();this.ndc.set(0,0);this.ray.setFromCamera(this.ndc,this.engine.camera);this.origin.copy(this.ray.ray.origin);this.direction.copy(this.ray.ray.direction);const spread=sampleSpread(this.engine.input.aiming,w.type==='charge'?.004:.014);this.cameraRight.setFromMatrixColumn(this.engine.camera.matrixWorld,0);this.cameraUp.setFromMatrixColumn(this.engine.camera.matrixWorld,1);this.direction.addScaledVector(this.cameraRight,spread.x).addScaledVector(this.cameraUp,spread.y).normalize();this.ray.set(this.origin,this.direction);}else if(actor.remoteHuman){const aim=actor.remoteState||{},yaw=aim.yaw||0,pitch=aim.pitch||0;this.origin.copy(actor.body.center);this.direction.set(-Math.sin(yaw)*Math.cos(pitch),-Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch)).normalize();const spread=sampleSpread(!!aim.aiming,w.type==='charge'?.004:.014);this.cameraRight.set(Math.cos(yaw),0,-Math.sin(yaw));this.cameraUp.set(Math.sin(yaw)*Math.sin(pitch),Math.cos(pitch),Math.cos(yaw)*Math.sin(pitch));this.direction.addScaledVector(this.cameraRight,spread.x).addScaledVector(this.cameraUp,spread.y).normalize();}else{this.origin.copy(actor.body.center);this.direction.subVectors(target.body.center,this.origin).normalize();}
   if(minionAimError){const x=this.direction.x,z=this.direction.z,c=Math.cos(minionAimError),s=Math.sin(minionAimError);this.direction.x=x*c+z*s;this.direction.z=z*c-x*s;}
   actor.model.updateWorldMatrix(true,true);actor.model.userData.rig.gun.getWorldPosition(this.muzzle);this.effects.muzzleFlash(this.muzzle,actor.team==='toys'?'#ffd677':'#c589ff');actor.flashTime=.075;
-  if(w.type==='cone'&&target?.isCore){this.match.damageBase(damage);this.effects.burst(target.body.center,actor.spec.color,5);return;}
+  if(w.type==='cone'&&target?.isCore){this.match.damageBase(damage);if(actor===this.player||actor.remoteHuman)audio.play('alarm');this.effects.burst(target.body.center,actor.spec.color,5);return;}
   if(w.type==='cone'){for(const other of this.actors)if(other.active&&other.team!==actor.team&&actor.position.distanceTo(other.position)<w.range&&this.inCone(actor,other,.45,minionAimError)&&this.sight(actor,other)){this.damage(other,damage,actor);if(w.weaken)other.status.weaken=3;}this.effects.burst(this.ahead(actor,w.range*.5),actor.spec.color,16);return;}
   if(w.type==='projectile'){
    this.endpoint.copy(this.origin).addScaledVector(this.direction,w.range);
@@ -48,7 +49,7 @@ export class Combat {
   if(p.targetCore&&this.ray.ray.intersectSphere(this.coreHitArea,this.point)){const d=this.point.distanceTo(this.origin);if(d<=distance){distance=d;target=this.coreTarget;barrier=null;impact=true;}}
   p.position.copy(this.origin).addScaledVector(this.direction,distance);if(p.position.y<.1)impact=true;
   if(p.grenade){p.spark.scale.setScalar(.16+Math.sin(this.time*40)*.05);if(p.life<=0){this.explodeBomb(p);continue;}if(impact){p.position.addScaledVector(this.direction,-.07);if(p.position.y<.5){p.position.y=.43;p.velocity.y=Math.abs(p.velocity.y)*.3;p.velocity.x*=.6;p.velocity.z*=.6;}else p.velocity.multiplyScalar(-.28);}continue;}
-  if(target?.isCore){this.match.damageBase(p.damage);target=null;}
+  if(target?.isCore){this.match.damageBase(p.damage);if(p.owner===this.player||p.owner.remoteHuman)audio.play('alarm');target=null;}
   if(target){if(target.team===p.owner.team)this.heal(target,p.heal,p.owner);else if(target.status.absorb&&this.inCone(target,p.owner,.25))this.heal(target,p.damage*.5,target);else{this.damage(target,p.damage+(p.owner.id==='meca'?p.splash:0),p.owner);if(p.poison){target.status.poison=4;target.poisonSource=p.owner;}}}if(barrier)barrier.hp-=p.damage;
   if(impact){if(p.splash)for(const other of this.actors)if(other.active&&other.team!==p.owner.team&&other!==target&&other.position.distanceTo(p.position)<4&&this.sight(p.position,other))this.damage(other,p.splash,p.owner);if(p.slow)this.zone('slow',p.position,p.owner.team,4,3,p.owner);this.effects.burst(p.position,p.owner.spec.color,8);this.projectiles.release(p);}else if(p.life<=0)this.projectiles.release(p);
  }}
@@ -57,9 +58,10 @@ export class Combat {
  damage(actor,amount,source,dot=false,reflected=false,critical=false){
   if(!actor.active||actor.status.spawn||actor.status.cloak||amount<=0)return;actor.sinceDamage=0;actor.status.sleep=0;if(actor.status.guard)amount*=.6;if(actor.status.defense)amount*=.8;const absorbed=Math.min(actor.shield,amount);actor.shield-=absorbed;amount-=absorbed;
   if(absorbed&&actor.shield<=0&&actor.status.slimeShield){delete actor.status.slimeShield;this.zone('slow',actor.position,actor.team,5,3,actor);for(const other of this.actors)if(other.active&&other.team!==actor.team&&other.position.distanceTo(actor.position)<5)this.damage(other,15,actor,false,true);}
+  if(actor.team!==source.team&&(source===this.player||source?.remoteHuman))audio.play('hitmark');
   if(source===this.player&&actor.team!==source.team){const applied=Math.min(actor.health,amount)+absorbed;if(dot){actor.damageAccumulated=(actor.damageAccumulated||0)+applied;if(actor.damageAccumulated>=2){this.damageNumbers.spawn(actor.head.center,actor.damageAccumulated,false);actor.damageAccumulated=0;}}else this.damageNumbers.spawn(actor.head.center,applied,critical);}
   if(actor.link?.type==='voodoo'&&!reflected)this.damage(actor.link.target,amount*.25,actor,false,true);if(actor===this.player&&!dot)this.ui.hurt();if(!actor.damage(amount))return;
-  actor.respawnTimer=5;const credit=source===this.player||source?.remoteHuman;if(credit){this.result.kills++;this.ui.kill(actor.name,this.result.kills);}
+  actor.respawnTimer=5;const credit=source===this.player||source?.remoteHuman;if(credit){this.result.kills++;this.ui.kill(actor.name,this.result.kills);}if(actor.team==='nightmares')audio.play('kill');
   if(this.match.mode==='horde'&&actor.team==='nightmares'){this.match.kill(credit);if(!credit)this.match.wavePoints+=25;if(this.match.phase==='intermission')this.ui.banner('20 SEGUNDOS PARA MEJORAR','1 Daño · 2 Vida · 3 Reparar cofre');}else if(this.match.mode==='confirmed')this.dropItem(actor);
   this.effects.burst(actor.position,actor.spec.color,18);if(actor===this.player){this.result.deaths++;this.engine.handleDeath({killer:source?.name||'Una pesadilla',score:this.result.kills*100});}
  }

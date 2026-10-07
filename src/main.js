@@ -16,6 +16,7 @@ import {Lobby} from './lobby.js';
 import {Settings} from './settings.js';
 import {Deployment} from './deployment.js';
 import {createRosterModel} from './characters.js';
+import {audio} from './audio.js';
 import {rewards} from '../functions/shared/progression.js';
 import {graphicsSettings,updateFPSCounter} from './graphicsSettings.js';
 
@@ -159,6 +160,9 @@ export class GameEngine {
   }
   bindLifecycle() {
     const options = { signal: this.abort.signal };
+    const enableAudio=()=>{void audio.init().catch(error=>console.error('No se pudo iniciar el audio:',error));};
+    window.addEventListener('click',enableAudio,{...options,once:true});
+    window.addEventListener('keydown',enableAudio,{...options,once:true});
     window.addEventListener('resize', () => this.resize(), options);
     document.addEventListener('visibilitychange', () => {
       this.lastTime = 0; this.accumulator = 0;

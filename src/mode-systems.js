@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {Combat} from './combat.js';
+import {audio} from './audio.js';
 import {SECTORS} from '../functions/shared/catalog.js';
 export class ModeSystems extends Combat {
  zone(type,position,team,radius,life,owner){const z=this.zones.acquire();if(!z)return;z.type=type;z.position.copy(position);z.position.y=.12;z.team=team;z.owner=owner;z.radius=radius;z.life=life;z.tick=0;z.mesh.scale.set(radius,1,radius);z.mesh.material.color.set(type==='heal'?'#a6efa5':type==='mine'?'#e6db83':team==='toys'?'#f0a08c':'#a588d1');z.mesh.visible=true;z.icons.forEach(e=>e.visible=type==='eyes');z.totem.visible=['heal','decoy'].includes(type);z.totem.scale.set(1.3/radius,1.4,1.3/radius);z.totem.position.y=.7;}
@@ -24,5 +25,5 @@ export class ModeSystems extends Combat {
   this.applyWeather(this.weather);this.rain.visible=this.weather>.55;if(this.rain.visible){this.rain.position.copy(this.engine.position);for(let i=0;i<450;i++){this.rainData[i*3+1]-=dt*24;if(this.rainData[i*3+1]<0)this.rainData[i*3+1]=35;}this.rain.geometry.attributes.position.needsUpdate=true;}
  }
  applyWeather(value){if(!this.engine.sun)return;this.engine.sun.intensity=3.3-value*2.6;this.engine.ambientLight.intensity=.5-value*.25;this.engine.scene.background.copy(this.dayColor).lerp(this.nightColor,value);this.engine.scene.fog.color.copy(this.engine.scene.background);}
- buyUpgrade(kind,actor=this.player){if(this.squadSync&&!this.squadSync.leader&&actor===this.player){const index=['damage','health','repair'].indexOf(kind);if(index<0){this.ui.toast('Mejora inválida');return;}this.squadSync.upgradeSeq[index]++;this.publishSquadPlayer();return;}try{this.match.buyUpgrade(kind);if(kind==='health'){actor.maxHealth+=20;actor.health+=20;}this.ui.toast('Mejora comprada');this.updateHUD();}catch(e){this.ui.toast(e.message);}}
+ buyUpgrade(kind,actor=this.player){if(this.squadSync&&!this.squadSync.leader&&actor===this.player){const index=['damage','health','repair'].indexOf(kind);if(index<0){this.ui.toast('Mejora inválida');return;}this.squadSync.upgradeSeq[index]++;audio.play('upgrade');this.publishSquadPlayer();return;}try{this.match.buyUpgrade(kind);if(kind==='health'){actor.maxHealth+=20;actor.health+=20;}if(actor===this.player||actor.remoteHuman)audio.play('upgrade');this.ui.toast('Mejora comprada');this.updateHUD();}catch(e){this.ui.toast(e.message);}}
 }
