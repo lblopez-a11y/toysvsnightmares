@@ -38,17 +38,17 @@ export class Battle extends ModeSystems {
  }
  makeLabel(actor){const node=document.createElement('div');node.className=`actor-label ${actor.team}`;node.hidden=true;const name=document.createElement('span');name.textContent=actor.name;const health=document.createElement('i');node.append(name,health);document.querySelector('#actor-labels').append(node);actor.healthBar=health;return node;}
  get enemies(){return this.banks[this.player.team==='toys'?'nightmares':'toys'];}get allies(){return this.banks[this.player.team].items;}
- start(mode=this.engine.lobby?.mode||'horde',size=this.engine.lobby?.size||4){
+ start(mode=this.engine.lobby?.mode||'horde',size=this.engine.lobby?.size||4,squad=null){
   this.stop();let id=this.engine.progress?.profile.selectedCharacter||'captain';if(mode==='horde'&&CHARACTERS[id].team!=='toys'){id='captain';this.ui.toast('Cofre Central requiere Juguetes. Capitán Espuma equipado para esta partida.');}
-  this.engine.selectPlayerModel?.(id);this.player.model=this.engine.playerVisual;this.player.configure(id);this.player.position=this.engine.position;this.match.reset(mode,this.player.team,size);this.started=true;this.time=0;this.navTimer=0;this.hudTimer=0;this.recoil=0;this.hit=0;this.charge=0;this.objectiveTime=0;
+  this.engine.selectPlayerModel?.(id);this.player.model=this.engine.playerVisual;this.player.configure(id);this.player.position=this.engine.position;this.match.reset(mode,this.player.team,size);this.playerSpawnIndex=squad?(this.engine.account.user?.uid===squad.memberUid?4:3):1;this.started=true;this.time=0;this.navTimer=0;this.hudTimer=0;this.recoil=0;this.hit=0;this.charge=0;this.objectiveTime=0;
   this.result={id:crypto.randomUUID(),team:this.player.team,mode,character:id,kills:0,deaths:0,healing:0,objectives:0,won:false,duration:0};this.world.ambientToys.forEach(m=>m.visible=false);this.arena.visible=false;this.world.core.visible=mode==='horde';this.world.coreLabel.visible=mode==='horde';for(const p of this.world.portals){p.group.visible=mode==='horde';p.label.visible=mode==='horde';}this.captureRing.visible=mode==='conquest';this.setObjective();
-  for(const team of ['toys','nightmares']){const count=mode==='horde'?(team==='toys'?size-1:0):size-(team===this.player.team?1:0);for(let i=0;i<count;i++)this.spawnActor(this.banks[team].acquire());}
-  this.resetPlayer();this.ui.banner(this.player.team==='toys'?'BASE DE LOS JUGUETES':'BASE DE LAS PESADILLAS',`${MODES[mode].name} · Avanza hacia el marcador del objetivo`);this.updateHUD();
+  for(const team of ['toys','nightmares']){const count=mode==='horde'?(team==='toys'?size-(squad?2:1):0):size-(team===this.player.team?1:0);for(let i=0;i<count;i++)this.spawnActor(this.banks[team].acquire());}
+  this.resetPlayer();this.ui.banner(this.player.team==='toys'?'BASE DE LOS JUGUETES':'BASE DE LAS PESADILLAS',`${MODES[mode].name} · Avanza hacia el marcador del objetivo`);this.updateHUD();if(squad)this.startSquadSync(squad);
  }
  setObjective(){const sector=SECTORS[Math.min(2,this.match.sector)];if(this.match.mode==='conquest')this.objective.set(sector.x,0,sector.z);else if(this.match.mode==='confirmed')this.objective.set(0,0,40);else this.objective.copy(this.base);this.captureRing.position.copy(this.objective);this.captureRing.position.y=.14;this.nav.fill(this.objectiveField,this.objective.x,this.objective.z);}
  spawnPoint(team,index=0){const base=BASES[team],row=Math.floor((index%24)/3),x=base.x+(index%3-1)*6,z=base.z+(team==='toys'?-1:1)*row*3;return this.nearestWalkable(x,z);}
- spawnActor(actor,boss=false,index=actor.slot||0){
-  const id=this.match.mode==='horde'&&actor.team==='nightmares'?(boss?'titan':waveEnemyId(1,index)):actor.homeId;
+ spawnActor(actor,boss=false,index=actor.slot||0,forcedId=null){
+  const id=forcedId||(this.match.mode==='horde'&&actor.team==='nightmares'?(boss?'titan':waveEnemyId(1,index)):actor.homeId);
   if(boss&&!actor.bossModel){actor.bossModel=createRosterModel(this.world,'titan');this.world.root.add(actor.bossModel);}
   actor.model.visible=false;
   if(MINIONS[id]){actor.minionModels??=new Map();if(!actor.minionModels.has(id)){const model=createMinionModel(this.world,id);this.world.root.add(model);actor.minionModels.set(id,model);}actor.model=actor.minionModels.get(id);}else actor.model=boss?actor.bossModel:actor.homeModel;
@@ -56,20 +56,179 @@ export class Battle extends ModeSystems {
   actor.position=actor.model.position;actor.configure(id,boss);const p=this.spawnPoint(actor.team,index);actor.spawn(p.x,p.z);actor.status.spawn=2;actor.route=planRoute(actor.team,index,this.objective);actor.routeField=actor.routeField||this.nav.field();actor.routeGoal=new THREE.Vector3();actor.routeRefresh=0;actor.navGoal=null;resetStuck(actor);actor.portalCooldown=0;actor.aiTimer=1+Math.random()*3;actor.label.querySelector('span').textContent=boss?'JEFE · TITÁN · 1000 HP':actor.name;
  }
 
- resetPlayer(){const p=this.spawnPoint(this.player.team,1);this.engine.position.set(p.x,0,p.z);this.player.spawn(p.x,p.z);this.player.position=this.engine.position;this.player.maxHealth=this.player.spec.hp+(this.match.upgrades.health||0)*20;this.player.health=this.player.maxHealth;this.player.status.spawn=3;this.player.sinceDamage=0;this.player.portalCooldown=0;this.engine.verticalSpeed=0;this.engine.input.yaw=Math.atan2(this.objective.x-p.x,this.objective.z-p.z)-Math.PI;this.engine.input.pitch=.035;this.engine.playerVisual.position.copy(this.engine.position);this.engine.playerVisual.visible=true;this.player.syncHitboxes();this.charge=0;this.updateHUD();}
- stop(){this.started=false;this.objectiveLabel.hidden=true;for(const actor of this.actors)actor.silhouette.visible=false;for(const bank of Object.values(this.banks))bank.releaseAll();for(const pool of [this.projectiles,this.zones,this.drops,this.barriers,this.portals])pool.releaseAll();this.effects.reset();this.damageNumbers.reset();this.world.ambientToys.forEach(m=>m.visible=true);this.captureRing.visible=false;this.arena.visible=false;this.rain.visible=false;this.world.core.visible=true;this.world.coreLabel.visible=true;for(const p of this.world.portals){p.group.visible=true;p.label.visible=true;}this.weather=0;this.applyWeather(0);const blind=document.querySelector('#blind-overlay');if(blind)blind.style.opacity='0';}
+ startSquadSync(squad){
+  const account=this.engine.account,uid=account.user?.uid;
+  if(!uid||![squad.leaderUid,squad.memberUid].includes(uid))throw new Error('No perteneces a este escuadrón.');
+  const leader=uid===squad.leaderUid;
+  this.stopSquadSync();this.squadSync={id:squad.id,uid,leader,remoteUid:leader?squad.memberUid:squad.leaderUid,remoteState:null,gameTimer:0,playerTimer:0,playerPending:false,gamePending:false,fireSeq:0,abilitySeq:[0,0,0],reloadSeq:0,upgradeSeq:[0,0,0],remoteFireSeq:0,remoteReloadSeq:0,remoteUpgradeSeq:[0,0,0],remoteCharge:0,remoteWasFiring:false,shots:[],shotSeqs:new Map(),seenShots:new Map(),errorShown:false};
+  const sync=this.squadSync;
+  sync.unsubs=[account.watchSquadPlayers(squad.id,players=>{if(this.squadSync!==sync)return;sync.remoteState=players.find(player=>player.uid===sync.remoteUid)||null;},error=>this.squadError(error))];
+  if(!leader)sync.unsubs.push(account.watchSquadGame(squad.id,state=>{if(this.squadSync===sync&&state)this.applySquadGame(state);},error=>this.squadError(error)));
+ }
+ stopSquadSync(){
+  if(!this.squadSync)return;
+  for(const unsubscribe of this.squadSync.unsubs||[])unsubscribe?.();
+  this.squadSync=null;
+  for(const actor of this.actors)if(actor.remoteHuman){actor.remoteHuman=false;actor.remoteUid=null;}
+ }
+ squadError(error){
+  console.error('Sincronización del escuadrón:',error);
+  if(this.squadSync&&!this.squadSync.errorShown){this.squadSync.errorShown=true;this.ui.toast(error.message||'No se pudo sincronizar la partida del escuadrón.');}
+ }
+ setSquadPlaying(playing){
+  if(!this.squadSync)return;
+  this.squadSync.playing=playing;
+  this.publishSquadPlayer(true);
+ }
+ collectSquadActions(){
+  const input=this.engine.input,sync=this.squadSync;
+  if(input.consumeAction('Fire'))sync.fireSeq++;
+  ['KeyQ','KeyE','KeyC'].forEach((key,index)=>{if(input.consumeAction(key)){sync.abilitySeq[index]++;const effect=this.player.spec.abilities[index]?.effect;if(['spring','flight','hover','blink','charge'].includes(effect))useAbility(this,this.player,index);}});
+  if(input.consumeAction('KeyR'))sync.reloadSeq++;
+  ['Digit1','Digit2','Digit3'].forEach((key,index)=>{if(input.consumeAction(key))sync.upgradeSeq[index]++;});
+ }
+ publishSquadPlayer(force=false){
+  const sync=this.squadSync;if(!sync)return;
+  if(sync.playerPending){sync.forcePlayerWrite||=force;return;}
+  const p=this.player.position,input=this.engine.input;
+  sync.playerPending=true;
+  void this.engine.account.publishSquadPlayer(sync.id,{
+   hero:this.player.id,x:p.x,y:p.y,z:p.z,yaw:input.yaw,pitch:input.pitch,
+   moving:this.player.moving,aiming:input.aiming,
+   firing:input.firing||input.down('KeyF'),fireSeq:sync.fireSeq,
+   abilitySeq:sync.abilitySeq,reloadSeq:sync.reloadSeq,upgradeSeq:sync.upgradeSeq,
+   playing:sync.playing??(this.engine.state.value==='playing'),
+  }).catch(error=>this.squadError(error)).finally(()=>{if(this.squadSync===sync){sync.playerPending=false;if(sync.forcePlayerWrite){sync.forcePlayerWrite=false;this.publishSquadPlayer(true);}}});
+ }
+ updateSquadSync(dt){
+  const sync=this.squadSync;if(!sync)return;
+  if(!sync.leader){
+   this.collectSquadActions();sync.playerTimer-=dt;
+   if(sync.playerTimer<=0){this.publishSquadPlayer();sync.playerTimer=.1;}
+   return;
+  }
+  this.applyRemoteSquadPlayer(dt);
+  sync.gameTimer-=dt;
+  if(sync.gameTimer<=0&&!sync.gamePending){this.publishSquadGame();sync.gameTimer=.1;}
+ }
+ ensureRemoteActor(uid,hero){
+  let actor=this.actors.find(item=>item.remoteHuman&&item.remoteUid===uid);
+  if(actor){if(hero&&actor.id!==hero&&CHARACTERS[hero])this.spawnActor(actor,false,actor.slot,hero);return actor;}
+  actor=this.banks.toys.acquire();
+  if(!actor)throw new Error('No hay espacio para el jugador del escuadrón.');
+  this.spawnActor(actor,false,actor.slot,CHARACTERS[hero]?.team==='toys'?hero:'captain');
+  actor.remoteHuman=true;actor.remoteUid=uid;actor.route=null;
+  return actor;
+ }
+ applyRemoteSquadPlayer(dt){
+  const sync=this.squadSync,data=sync?.remoteState;
+  if(!sync||!data)return;
+  const sentAt=data.sentAt?.toMillis?.()??data.sentAt;
+  const fresh=Number.isFinite(sentAt)&&Date.now()-sentAt<3500;
+  const actor=this.ensureRemoteActor(sync.remoteUid,data.hero);
+  actor.remoteFresh=fresh&&data.playing;
+  if(!actor.remoteFresh){actor.active=false;actor.model.visible=false;return;}
+  if(!actor.active)this.spawnActor(actor,false,actor.slot,CHARACTERS[data.hero]?.team==='toys'?data.hero:'captain');
+  actor.active=true;actor.model.visible=true;actor.position.set(data.x,data.y,data.z);
+  actor.model.rotation.y=data.yaw+Math.PI;actor.moving=!!data.moving;actor.syncHitboxes();
+  actor.remoteState=data;actor.remoteFresh=true;
+  if(data.reloadSeq>sync.remoteReloadSeq){sync.remoteReloadSeq=data.reloadSeq;this.reloadWeapon(actor);}
+  const upgradeKinds=['damage','health','repair'];
+  for(let i=0;i<3;i++)if(data.upgradeSeq?.[i]>(sync.remoteUpgradeSeq[i]||0)){this.buyUpgrade(upgradeKinds[i],actor);sync.remoteUpgradeSeq[i]=data.upgradeSeq[i];}
+  const weapon=actor.spec.weapon,firing=!!data.firing;
+  const newFire=data.fireSeq>sync.remoteFireSeq;
+  if(weapon.type==='charge'){
+   if(firing)sync.remoteCharge=Math.min(1.5,sync.remoteCharge+dt);
+   else if(sync.remoteWasFiring||newFire){const target=this.aimTarget(actor,false,weapon.range);this.attack(actor,target,25+45*Math.min(1,sync.remoteCharge/1.5));sync.remoteCharge=0;}
+  }else if(firing||newFire){
+   const target=this.aimTarget(actor,false,weapon.range);this.attack(actor,target);
+  }
+  sync.remoteWasFiring=firing;sync.remoteFireSeq=Math.max(sync.remoteFireSeq,data.fireSeq||0);
+  for(let i=0;i<3;i++)if(data.abilitySeq?.[i]>(sync.remoteAbilityApplied?.[i]||0)){useAbility(this,actor,i);sync.remoteAbilityApplied??=[0,0,0];sync.remoteAbilityApplied[i]=data.abilitySeq[i];}
+ }
+ recordSquadAttack(actor){
+  const sync=this.squadSync;if(!sync?.leader||actor!==this.player&&!actor.remoteHuman)return;
+  const uid=actor===this.player?sync.uid:actor.remoteUid;if(!uid)return;
+  const seq=(sync.shotSeqs.get(uid)||0)+1;sync.shotSeqs.set(uid,seq);
+  const aim=actor===this.player?this.engine.input:actor.remoteState||{};
+  sync.shots.push({uid,seq,hero:actor.id,x:actor.position.x,y:actor.position.y,z:actor.position.z,yaw:aim.yaw||0,pitch:aim.pitch||0,range:actor.spec.weapon.range});
+  if(sync.shots.length>16)sync.shots.shift();
+ }
+ playSquadShots(shots){
+  const sync=this.squadSync;if(!sync||sync.leader)return;
+  for(const shot of shots||[]){
+   if(!shot.uid||shot.seq<=(sync.seenShots.get(shot.uid)||0))continue;
+   sync.seenShots.set(shot.uid,shot.seq);
+   const actor=shot.uid===sync.uid?this.player:this.ensureRemoteActor(shot.uid,shot.hero);
+   actor.model.updateWorldMatrix(true,true);actor.model.userData.rig.gun.getWorldPosition(this.muzzle);
+   this.origin.set(shot.x,shot.y+1.2,shot.z);
+   this.direction.set(-Math.sin(shot.yaw)*Math.cos(shot.pitch),-Math.sin(shot.pitch),-Math.cos(shot.yaw)*Math.cos(shot.pitch)).normalize();
+   this.endpoint.copy(this.origin).addScaledVector(this.direction,Math.min(35,shot.range||35));
+   const color=actor.spec.color||'#ffd677';
+   this.effects.muzzleFlash(this.muzzle,actor.team==='toys'?'#ffd677':'#c589ff');
+   this.effects.tracer(this.muzzle,this.endpoint,color);
+  }
+ }
+ publishSquadGame(force=false){
+  const sync=this.squadSync;if(!sync?.leader)return;
+  if(sync.gamePending){sync.forceGameWrite||=force;return;}
+  const syncStatus=actor=>Object.fromEntries(['cloak','stun','sleep','slow','haste','root','flight','hover','jump','spawn','shieldTime','guard','defense','power','weaken','aura','blind','scan'].filter(key=>typeof actor.status[key]==='boolean'||Number.isFinite(actor.status[key])).map(key=>[key,actor.status[key]]));
+  const serialize=actor=>({team:actor.team,slot:actor.slot,id:actor.id,boss:!!actor.boss,active:!!actor.active,state:actor.state,moving:!!actor.moving,x:actor.position.x,y:actor.position.y,z:actor.position.z,yaw:actor.model.rotation.y,health:actor.health,maxHealth:actor.maxHealth,shield:actor.shield||0,status:syncStatus(actor),deathTime:Number(actor.deathTime)||0,ammo:Number(actor.ammo)||0,reload:Number(actor.reload)||0,cooldowns:Array.from(actor.cooldowns)});
+  const hostPlayer={hero:this.player.id,active:this.player.active,x:this.player.position.x,y:this.player.position.y,z:this.player.position.z,yaw:this.player.model.rotation.y,health:this.player.health,maxHealth:this.player.maxHealth,shield:this.player.shield||0,status:syncStatus(this.player),deathTime:Number(this.player.deathTime)||0,ammo:Number(this.player.ammo)||0,reload:Number(this.player.reload)||0,cooldowns:Array.from(this.player.cooldowns)};
+  const actors=[];for(const team of ['toys','nightmares'])for(const actor of this.banks[team].items)actors.push({...serialize(actor),...(actor.remoteUid?{remoteUid:actor.remoteUid}:{})});
+  const match={wave:this.match.wave,remaining:this.match.remaining,phase:this.match.phase,timer:this.match.timer,duration:this.time,baseHealth:this.match.baseHealth,kills:this.match.kills,score:this.match.score,sector:this.match.sector,capture:this.match.capture,contested:this.match.contested,points:this.match.points,winner:this.match.winner,wavePoints:this.match.wavePoints,upgrades:this.match.upgrades};
+  sync.gamePending=true;
+  void this.engine.account.publishSquadGame(sync.id,{actors,hostPlayer,match,shots:sync.shots.map(shot=>({...shot}))}).catch(error=>this.squadError(error)).finally(()=>{if(this.squadSync===sync){sync.gamePending=false;if(sync.forceGameWrite){sync.forceGameWrite=false;this.publishSquadGame(true);}}});
+ }
+ applySquadGame(state){
+  const sync=this.squadSync;if(!sync||sync.leader)return;
+  const apply=(actor,data,local=false)=>{
+   if(data.id&&actor.id!==data.id&&(CHARACTERS[data.id]||MINIONS[data.id]))this.spawnActor(actor,!!data.boss,data.slot,data.id);
+   actor.position.set(data.x,data.y,data.z);actor.model.position.copy(actor.position);actor.model.rotation.y=data.yaw;
+   actor.active=!!data.active;actor.deathTime=data.deathTime||0;actor.model.visible=actor.active||actor.deathTime>0;actor.health=data.health;actor.maxHealth=data.maxHealth;
+   actor.state=data.state||actor.state;actor.moving=!!data.moving;
+   actor.shield=data.shield||0;actor.status=data.status||{};
+   actor.ammo=data.ammo;actor.reload=data.reload;
+   if(Array.isArray(data.cooldowns))actor.cooldowns.set(data.cooldowns);
+   actor.syncHitboxes();
+   if(local&&actor.health<=0&&this.engine.state.value==='playing')this.engine.handleDeath({killer:'Una pesadilla'});
+  };
+  if(state.hostPlayer){
+   const remote=this.ensureRemoteActor(sync.remoteUid,state.hostPlayer.hero);
+   apply(remote,{...state.hostPlayer,id:state.hostPlayer.hero,team:'toys',slot:remote.slot,state:'PATROL',moving:false},false);
+  }
+  for(const data of state.actors||[]){
+   const bank=this.banks[data.team],actor=bank?.items.find(item=>item.slot===data.slot);if(!actor)continue;
+   if(data.remoteUid===sync.uid){apply(this.player,data,true);continue;}
+   if(actor.remoteHuman&&actor.remoteUid===sync.remoteUid)continue;
+   apply(actor,data);
+  }
+  this.playSquadShots(state.shots);
+  const saved=state.match;if(saved){
+   for(const key of ['wave','remaining','phase','timer','baseHealth','kills','score','sector','capture','contested','points','winner','wavePoints','upgrades'])if(saved[key]!==undefined)this.match[key]=saved[key];
+   if(Number.isFinite(saved.duration)){this.time=saved.duration;this.result.duration=saved.duration;}
+   if(this.match.sector!==this.lastSquadSector){this.lastSquadSector=this.match.sector;this.setObjective();}
+   this.updateHUD();
+  }
+  if(['won','lost'].includes(this.match.phase)&&!['result','menu','login'].includes(this.engine.state.value)){this.result.won=this.match.phase==='won';this.engine.finishMatch(this.result.won);}
+ }
+
+ resetPlayer(){const p=this.spawnPoint(this.player.team,this.playerSpawnIndex||1);this.engine.position.set(p.x,0,p.z);this.player.spawn(p.x,p.z);this.player.position=this.engine.position;this.player.maxHealth=this.player.spec.hp+(this.match.upgrades.health||0)*20;this.player.health=this.player.maxHealth;this.player.status.spawn=3;this.player.sinceDamage=0;this.player.portalCooldown=0;this.engine.verticalSpeed=0;this.engine.input.yaw=Math.atan2(this.objective.x-p.x,this.objective.z-p.z)-Math.PI;this.engine.input.pitch=.035;this.engine.playerVisual.position.copy(this.engine.position);this.engine.playerVisual.visible=true;this.player.syncHitboxes();this.charge=0;this.updateHUD();}
+ stop(){this.stopSquadSync();this.started=false;this.objectiveLabel.hidden=true;for(const actor of this.actors)actor.silhouette.visible=false;for(const bank of Object.values(this.banks))bank.releaseAll();for(const pool of [this.projectiles,this.zones,this.drops,this.barriers,this.portals])pool.releaseAll();this.effects.reset();this.damageNumbers.reset();this.world.ambientToys.forEach(m=>m.visible=true);this.captureRing.visible=false;this.arena.visible=false;this.rain.visible=false;this.world.core.visible=true;this.world.coreLabel.visible=true;for(const p of this.world.portals){p.group.visible=true;p.label.visible=true;}this.weather=0;this.applyWeather(0);const blind=document.querySelector('#blind-overlay');if(blind)blind.style.opacity='0';}
  spawnWave(){const total=this.match.beginWave();for(let i=0;i<total;i++){const actor=this.banks.nightmares.acquire();if(!actor)throw new Error('Pool de horda agotado');const boss=i===0&&this.match.wave%3===0;if(boss)actor.originalId=actor.id;this.spawnActor(actor,boss,i);this.effects.burst(actor.position,'#c192ed',12);}this.ui.banner(`OLEADA ${this.match.wave} / 10`,this.match.wave%3===0?'¡TITÁN DE PORCELANA! · 1000 HP':`${total} pesadillas · Protege el cofre`);}
  nearestWalkable(x,z){const at=this.nav.index(x,z);if(this.nav.walkable[at])return {x,z};let best=Infinity,result={x:0,z:12};for(let i=0;i<this.nav.walkable.length;i++)if(this.nav.walkable[i]){const px=this.nav.coordinate(i%this.nav.n),pz=this.nav.coordinate(Math.floor(i/this.nav.n)),d=(x-px)**2+(z-pz)**2;if(d<best){best=d;result.x=px;result.z=pz;}}return result;}
  fixedUpdate(dt){
-  if(!this.started)return;this.time+=dt;this.regenerate(dt);this.result.duration=this.time;const input=this.engine.input;for(const actor of this.actors)if(actor.active)statusTick(this,actor,dt);
+  if(!this.started)return;this.time+=dt;this.result.duration=this.time;const input=this.engine.input;
+  if(this.squadSync&&!this.squadSync.leader){this.updateSquadSync(dt);statusTick(this,this.player,dt);this.player.moving=!!(this.engine.move.x||this.engine.move.z);this.player.syncHitboxes();for(const actor of this.actors)if(actor!==this.player)actor.animate(dt,this.time);this.player.animate(dt,this.time);this.effects.update(dt);this.damageNumbers.update(dt,this.engine.camera,true);this.world.animateEnvironment(this.time);this.hudTimer-=dt;if(this.hudTimer<=0){this.updateHUD();this.hudTimer=.1;}return;}
+  this.regenerate(dt);for(const actor of this.actors)if(actor.active)statusTick(this,actor,dt);this.updateSquadSync(dt);
   if(input.consumeAction('KeyR'))this.reloadWeapon(this.player);['KeyQ','KeyE','KeyC'].forEach((key,i)=>{if(input.consumeAction(key))useAbility(this,this.player,i);});if(input.consumeAction('Digit1'))this.buyUpgrade('damage');if(input.consumeAction('Digit2'))this.buyUpgrade('health');if(input.consumeAction('Digit3'))this.buyUpgrade('repair');
   const tap=input.consumeAction('Fire'),held=input.firing||input.down('KeyF');if(this.player.spec.weapon.type==='charge'){if(held&&!this.player.status.cloak)this.charge=Math.min(1.5,this.charge+dt);else if(this.charge>0||tap){this.attack(this.player,null,25+45*Math.min(1,this.charge/1.5));this.charge=0;}}else if(held||tap)this.attack(this.player);
   this.player.moving=!!(this.engine.move.x||this.engine.move.z);this.player.syncHitboxes();this.navTimer-=dt;if(this.navTimer<=0){this.nav.fill(this.objectiveField,this.objective.x,this.objective.z);this.navTimer=1;}
   if(this.match.mode==='horde'&&this.match.phase==='intermission'){this.match.timer-=dt;if(this.match.timer<=0)this.spawnWave();}
-  for(const bank of Object.values(this.banks))for(const actor of bank.active){if(!actor.active){actor.animate(dt,this.time);actor.respawnTimer-=dt;if(this.match.mode==='horde'&&actor.team==='nightmares'&&actor.deathTime<=0){if(actor.originalId){actor.configure(actor.originalId);actor.originalId=null;}bank.release(actor);}else if(actor.respawnTimer<=0)this.spawnActor(actor);continue;}this.updateBot(actor,dt);actor.animate(dt,this.time);}
+  for(const bank of Object.values(this.banks))for(const actor of bank.active){if(!actor.active){actor.animate(dt,this.time);if(actor.remoteHuman&&!actor.remoteFresh)continue;actor.respawnTimer-=dt;if(this.match.mode==='horde'&&actor.team==='nightmares'&&actor.deathTime<=0){if(actor.originalId){actor.configure(actor.originalId);actor.originalId=null;}bank.release(actor);}else if(actor.respawnTimer<=0)this.spawnActor(actor);continue;}if(!actor.remoteHuman)this.updateBot(actor,dt);actor.animate(dt,this.time);}
   this.updateProjectiles(dt);this.updateZones(dt);this.updateDrops(dt);this.updateBarriers(dt);this.updatePortals(dt);this.updateMode(dt);this.effects.update(dt);this.world.animateEnvironment(this.time);this.player.animate(dt,this.time);
   const rig=this.player.model.userData.rig;rig.gun.rotation.x=this.player.reload>0?-1.1+Math.sin(this.time*8)*.1:-this.engine.input.pitch;rig.gun.position.z=.35-this.recoil*.16;if(this.engine.position.y>.05)rig.legs.forEach((leg,i)=>leg.rotation.x=i?.4:-.6);
-  this.hudTimer-=dt;if(this.hudTimer<=0){this.updateHUD();this.hudTimer=.1;}if(['won','lost'].includes(this.match.phase)&&this.engine.state.value==='playing'){this.result.won=this.match.phase==='won';this.engine.finishMatch(this.result.won);}
+  this.hudTimer-=dt;if(this.hudTimer<=0){this.updateHUD();this.hudTimer=.1;}if(['won','lost'].includes(this.match.phase)&&this.engine.state.value==='playing'){this.result.won=this.match.phase==='won';this.publishSquadGame(true);this.engine.finishMatch(this.result.won);}
  }
  moveBot(actor,goal,dt){
   actor.wantsMove=true;if(!this.moveMultiplier(actor))return;

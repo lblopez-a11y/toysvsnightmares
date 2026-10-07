@@ -21,6 +21,10 @@ service cloud.firestore {
       return /databases/$(database)/documents/players/$(ownerUid)/friendRequests/$(senderUid);
     }
 
+    function squadInvitePath(inviteId) {
+      return /databases/$(database)/documents/squadInvites/$(inviteId);
+    }
+
     match /players/{uid} {
       allow read: if isOwner(uid);
       allow create: if isOwner(uid)
@@ -147,6 +151,113 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
         && request.resource.data.status in ['accepted', 'rejected'];
       allow delete: if false;
+    }
+
+    match /squadLobbies/{squadId} {
+      allow read: if signedIn()
+        && (resource.data.leaderUid == request.auth.uid || resource.data.memberUid == request.auth.uid);
+      allow create: if signedIn()
+        && squadId.matches('^[A-Za-z0-9_-]+$')
+        && request.auth.uid == request.resource.data.memberUid
+        && request.resource.data.keys().hasOnly(['leaderUid', 'memberUid', 'leaderName', 'memberName', 'status', 'leaderReady', 'memberReady', 'createdAt', 'updatedAt'])
+        && request.resource.data.leaderUid is string
+        && request.resource.data.leaderUid != request.auth.uid
+        && request.resource.data.status == 'in_lobby'
+        && request.resource.data.leaderReady == false
+        && request.resource.data.memberReady == false
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp
+        && existsAfter(squadInvitePath(squadId))
+        && getAfter(squadInvitePath(squadId)).data.status == 'accepted'
+        && getAfter(squadInvitePath(squadId)).data.fromUid == request.resource.data.leaderUid
+        && getAfter(squadInvitePath(squadId)).data.toUid == request.resource.data.memberUid;
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leaderReady', 'memberReady', 'status', 'updatedAt'])
+        && request.resource.data.updatedAt is timestamp
+        && (
+          (request.auth.uid == resource.data.leaderUid
+            && resource.data.status == 'in_lobby'
+            && request.resource.data.status == 'in_lobby'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leaderReady', 'updatedAt'])
+            && request.resource.data.leaderReady is bool)
+          ||
+          (request.auth.uid == resource.data.memberUid
+            && resource.data.status == 'in_lobby'
+            && request.resource.data.status == 'in_lobby'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberReady', 'updatedAt'])
+            && request.resource.data.memberReady is bool)
+          ||
+          (request.auth.uid == resource.data.leaderUid
+            && resource.data.status == 'in_lobby'
+            && resource.data.leaderReady == true
+            && resource.data.memberReady == true
+            && request.resource.data.status == 'starting'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+      allow delete: if false;
+
+      match /players/{uid} {
+        function isSquadPlayer() {
+          let squad = get(/databases/$(database)/documents/squadLobbies/$(squadId)).data;
+          return signedIn()
+            && squad.status == 'starting'
+            && (squad.leaderUid == request.auth.uid || squad.memberUid == request.auth.uid);
+        }
+
+        allow read: if isSquadPlayer();
+        allow create, update: if isSquadPlayer()
+          && uid == request.auth.uid
+          && request.resource.data.keys().hasOnly([
+            'uid', 'hero', 'x', 'y', 'z', 'yaw', 'pitch', 'moving', 'aiming', 'firing',
+            'fireSeq', 'abilitySeq', 'reloadSeq', 'upgradeSeq', 'playing', 'sentAt'
+          ])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.hero is string
+          && request.resource.data.hero.size() <= 32
+          && request.resource.data.x is number
+          && request.resource.data.x >= -256 && request.resource.data.x <= 256
+          && request.resource.data.y is number
+          && request.resource.data.y >= -32 && request.resource.data.y <= 64
+          && request.resource.data.z is number
+          && request.resource.data.z >= -256 && request.resource.data.z <= 256
+          && request.resource.data.yaw is number
+          && request.resource.data.pitch is number
+          && request.resource.data.moving is bool
+          && request.resource.data.aiming is bool
+          && request.resource.data.firing is bool
+          && request.resource.data.fireSeq is int
+          && request.resource.data.abilitySeq is list
+          && request.resource.data.abilitySeq.size() == 3
+          && request.resource.data.reloadSeq is int
+          && request.resource.data.upgradeSeq is list
+          && request.resource.data.upgradeSeq.size() == 3
+          && request.resource.data.playing is bool
+          && request.resource.data.sentAt is timestamp;
+        allow delete: if false;
+      }
+
+      match /game/{stateId} {
+        function isSquadPlayer() {
+          let squad = get(/databases/$(database)/documents/squadLobbies/$(squadId)).data;
+          return signedIn()
+            && squad.status == 'starting'
+            && (squad.leaderUid == request.auth.uid || squad.memberUid == request.auth.uid);
+        }
+
+        allow read: if isSquadPlayer();
+        allow create, update: if isSquadPlayer()
+          && request.auth.uid == get(/databases/$(database)/documents/squadLobbies/$(squadId)).data.leaderUid
+          && stateId == 'current'
+          && request.resource.data.keys().hasOnly(['actors', 'hostPlayer', 'match', 'shots', 'updatedAt'])
+          && request.resource.data.actors is list
+          && request.resource.data.actors.size() <= 32
+          && request.resource.data.hostPlayer is map
+          && request.resource.data.match is map
+          && request.resource.data.shots is list
+          && request.resource.data.shots.size() <= 16
+          && request.resource.data.updatedAt is timestamp;
+        allow delete: if false;
+      }
     }
   }
 }

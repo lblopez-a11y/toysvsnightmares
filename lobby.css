@@ -260,6 +260,16 @@ body[data-state="menu"] .vignette{background:linear-gradient(90deg,#0b242bc9,tra
 
 #invite-modal[hidden] { display: none; }
 #invite-modal .panel { max-height: min(80vh, 640px); overflow-y: auto; }
+#squad-modal[hidden] { display: none; }
+#squad-modal .panel { max-height: min(80vh, 640px); overflow-y: auto; }
+.squad-members { display: grid; gap: 10px; margin: 20px 0; }
+.squad-member { display: flex; justify-content: space-between; gap: 12px; padding: 14px; background: #0d232a; border: 1px solid #ffffff18; border-radius: 6px; }
+.squad-member span { color: #f0c987; font-size: 11px; }
+.squad-member span[data-ready="true"] { color: var(--lime); }
+.squad-actions { display: flex; gap: 10px; }
+.squad-actions button { flex: 1; }
+.squad-actions [data-squad-action="start"]:not(:disabled) { background: #80e84d; color: #10242a; box-shadow: 0 0 24px #80e84d70; }
+.squad-actions [data-squad-action="start"]:disabled { opacity: .45; }
 .invite-list { display: flex; flex-direction: column; gap: 8px; margin: 18px 0; }
 .invite-friend {
   display: flex;

@@ -50,3 +50,73 @@ test('las invitaciones usan y escuchan el UID limpio del destinatario',async()=>
   {field:'status',operator:'==',value:'pending'},
  ]);
 });
+
+test('aceptar invitación crea la sala y marca la invitación como aceptada en una transacción',async()=>{
+ const writes=[],service=new AccountService();
+ service.user={uid:'memberUid',displayName:'Santiago'};service.db={};
+ service.firestoreSDK={
+  doc:(_db,collection,id)=>({path:`${collection}/${id}`}),
+  runTransaction:async(_db,callback)=>callback({
+   get:async ref=>({exists:()=>true,data:()=>ref.path==='squadInvites/invite-1'?{fromUid:'leaderUid',toUid:'memberUid',fromName:'Líder',status:'pending'}:null}),
+   update:(ref,data)=>writes.push({type:'update',path:ref.path,data}),
+   set:(ref,data)=>writes.push({type:'set',path:ref.path,data}),
+  }),
+  serverTimestamp:()=>123,
+ };
+
+ await service.respondToSquadInvite('invite-1','accepted');
+ assert.deepEqual(writes.map(write=>[write.type,write.path]),[
+  ['update','squadInvites/invite-1'],['set','squadLobbies/invite-1'],
+ ]);
+ assert.equal(writes[0].data.status,'accepted');
+ assert.deepEqual(writes[1].data,{
+  leaderUid:'leaderUid',memberUid:'memberUid',leaderName:'Líder',memberName:'Santiago',
+  status:'in_lobby',leaderReady:false,memberReady:false,createdAt:123,updatedAt:123,
+ });
+});
+
+test('la transición de inicio requiere que el usuario sea líder y ambos estén listos',async()=>{
+ const writes=[],service=new AccountService();
+ service.user={uid:'leaderUid'};service.db={};
+ service.firestoreSDK={
+  doc:(_db,collection,id)=>({path:`${collection}/${id}`}),
+  getDoc:async()=>({exists:()=>true,data:()=>({leaderUid:'leaderUid',memberUid:'memberUid',status:'in_lobby',leaderReady:true,memberReady:true})}),
+  updateDoc:async(ref,data)=>writes.push({ref,data}),
+  serverTimestamp:()=>456,
+ };
+
+ await service.updateSquadState('squad-1',{status:'starting'});
+ assert.equal(writes.length,1);
+ assert.deepEqual(writes[0].data,{status:'starting',updatedAt:456});
+ await assert.rejects(service.updateSquadState('squad-1',{status:'in_game'}),/Estado de partida inválido/);
+ assert.equal(writes.length,1);
+});
+
+test('el transporte de partida publica el estado propio y escucha el estado compartido del líder',async()=>{
+ const writes=[],subscriptions=[],service=new AccountService(),db={};
+ service.user={uid:'memberUid'};service.db=db;
+ service.firestoreSDK={
+  doc:(parent,...segments)=>({path:[parent===db?'':parent.path,...segments].filter(Boolean).join('/')}),
+  collection:(parent,...segments)=>({path:[parent.path,...segments].join('/')}),
+  setDoc:async(ref,data)=>writes.push({path:ref.path,data}),
+  serverTimestamp:()=>456,
+  onSnapshot:(ref,onValue)=>{subscriptions.push(ref.path);if(ref.path.endsWith('/game/current'))onValue({exists:()=>true,data:()=>({match:{wave:2}})});return ()=>{};},
+ };
+
+ await service.publishSquadPlayer('squad-2',{hero:'captain',x:1,y:0,z:2,yaw:0,pitch:0,moving:true,firing:false,fireSeq:0,abilitySeq:[0,0,0],reloadSeq:0,upgradeSeq:[0,0,0],playing:true});
+ await service.publishSquadGame('squad-2',{actors:[],hostPlayer:{hero:'captain'},match:{wave:2},shots:[]});
+ assert.equal(writes[0].path,'squadLobbies/squad-2/players/memberUid');
+ assert.equal(writes[0].data.uid,'memberUid');
+ assert.equal(typeof writes[0].data.sentAt,'number');
+ assert.equal(writes[1].path,'squadLobbies/squad-2/game/current');
+ assert.equal(writes[1].data.updatedAt,456);
+
+ const observed=[];
+ service.watchSquadPlayers('squad-2',players=>observed.push(players));
+ service.watchSquadGame('squad-2',state=>observed.push(state));
+ assert.deepEqual(subscriptions,[
+  'squadLobbies/squad-2/players',
+  'squadLobbies/squad-2/game/current',
+ ]);
+ assert.deepEqual(observed,[{match:{wave:2}}]);
+});

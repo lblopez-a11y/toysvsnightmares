@@ -24,5 +24,5 @@ export class ModeSystems extends Combat {
   this.applyWeather(this.weather);this.rain.visible=this.weather>.55;if(this.rain.visible){this.rain.position.copy(this.engine.position);for(let i=0;i<450;i++){this.rainData[i*3+1]-=dt*24;if(this.rainData[i*3+1]<0)this.rainData[i*3+1]=35;}this.rain.geometry.attributes.position.needsUpdate=true;}
  }
  applyWeather(value){if(!this.engine.sun)return;this.engine.sun.intensity=3.3-value*2.6;this.engine.ambientLight.intensity=.5-value*.25;this.engine.scene.background.copy(this.dayColor).lerp(this.nightColor,value);this.engine.scene.fog.color.copy(this.engine.scene.background);}
- buyUpgrade(kind){try{this.match.buyUpgrade(kind);if(kind==='health'){this.player.maxHealth+=20;this.player.health+=20;}this.ui.toast('Mejora comprada');this.updateHUD();}catch(e){this.ui.toast(e.message);}}
+ buyUpgrade(kind,actor=this.player){if(this.squadSync&&!this.squadSync.leader&&actor===this.player){const index=['damage','health','repair'].indexOf(kind);if(index<0){this.ui.toast('Mejora inválida');return;}this.squadSync.upgradeSeq[index]++;this.publishSquadPlayer();return;}try{this.match.buyUpgrade(kind);if(kind==='health'){actor.maxHealth+=20;actor.health+=20;}this.ui.toast('Mejora comprada');this.updateHUD();}catch(e){this.ui.toast(e.message);}}
 }

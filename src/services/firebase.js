@@ -135,8 +135,76 @@ export class AccountService {
   async respondToSquadInvite(inviteId,status) {
     if(!this.user||!this.db)throw new Error('Inicia sesión para responder invitaciones.');
     if(typeof inviteId!=='string'||!inviteId||!['accepted','rejected'].includes(status))throw new Error('Invitación inválida.');
-    const {doc,updateDoc}=this.firestoreSDK;
-    await updateDoc(doc(this.db,'squadInvites',inviteId),{status});
+    const {doc,runTransaction,serverTimestamp}=this.firestoreSDK,uid=extractUid(this.user.uid);
+    const inviteRef=doc(this.db,'squadInvites',inviteId),squadRef=doc(this.db,'squadLobbies',inviteId);
+    await runTransaction(this.db,async transaction=>{
+      const invite=await transaction.get(inviteRef);
+      if(!invite.exists()||invite.data().toUid!==uid||invite.data().status!=='pending')throw new Error('La invitación ya no está disponible.');
+      const invitation=invite.data();
+      transaction.update(inviteRef,{status});
+      if(status==='accepted'){
+        transaction.set(squadRef,{
+          leaderUid:invitation.fromUid,memberUid:uid,
+          leaderName:invitation.fromName||'Líder',memberName:this.user.displayName||'Miembro',
+          status:'in_lobby',leaderReady:false,memberReady:false,
+          createdAt:serverTimestamp(),updatedAt:serverTimestamp(),
+        });
+      }
+    });
+  }
+  async updateSquadState(squadId,updateData) {
+    if(!this.user||!this.db)throw new Error('Inicia sesión para usar el escuadrón.');
+    const {doc,updateDoc,serverTimestamp}=this.firestoreSDK,uid=extractUid(this.user.uid);
+    const allowed=['leaderReady','memberReady','status'];
+    if(!updateData||Object.keys(updateData).length!==1||!allowed.includes(Object.keys(updateData)[0]))throw new Error('Cambio de estado del escuadrón inválido.');
+    const [key,value]=Object.entries(updateData)[0];
+    if((key==='leaderReady'||key==='memberReady')&&typeof value!=='boolean')throw new Error('Estado de listo inválido.');
+    if(key==='status'&&value!=='starting')throw new Error('Estado de partida inválido.');
+    const squadRef=doc(this.db,'squadLobbies',squadId),snapshot=await this.firestoreSDK.getDoc(squadRef);
+    if(!snapshot.exists())throw new Error('La sala del escuadrón ya no existe.');
+    const squad=snapshot.data();
+    if((key==='leaderReady'&&squad.leaderUid!==uid)||(key==='memberReady'&&squad.memberUid!==uid))throw new Error('No puedes cambiar el estado de otro integrante.');
+    if(key==='status'&&(squad.leaderUid!==uid||!squad.leaderReady||!squad.memberReady||squad.status!=='in_lobby'))throw new Error('Ambos integrantes deben estar listos antes de iniciar.');
+    await updateDoc(squadRef,{...updateData,updatedAt:serverTimestamp()});
+  }
+  squadRef(squadId){
+    if(!this.db||typeof squadId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(squadId))throw new Error('Sala de escuadrón inválida.');
+    return this.firestoreSDK.doc(this.db,'squadLobbies',squadId);
+  }
+  watchSquadPlayers(squadId,onValue,onError){
+    const squad=this.squadRef(squadId),players=this.firestoreSDK.collection(squad,'players');
+    return this.firestoreSDK.onSnapshot(players,snapshot=>onValue(snapshot.docs.map(item=>({...item.data(),uid:item.id}))),onError);
+  }
+  watchSquadGame(squadId,onValue,onError){
+    const squad=this.squadRef(squadId),state=this.firestoreSDK.doc(squad,'game','current');
+    return this.firestoreSDK.onSnapshot(state,snapshot=>onValue(snapshot.exists()?snapshot.data():null),onError);
+  }
+  async publishSquadPlayer(squadId,data){
+    if(!this.user||!this.db)throw new Error('Inicia sesión para sincronizar la partida.');
+    const ref=this.firestoreSDK.doc(this.squadRef(squadId),'players',extractUid(this.user.uid));
+    await this.firestoreSDK.setDoc(ref,{...data,uid:extractUid(this.user.uid),sentAt:this.firestoreSDK.serverTimestamp()});
+  }
+  async publishSquadGame(squadId,data){
+    if(!this.user||!this.db)throw new Error('Inicia sesión para sincronizar la partida.');
+    const ref=this.firestoreSDK.doc(this.squadRef(squadId),'game','current');
+    await this.firestoreSDK.setDoc(ref,{...data,updatedAt:this.firestoreSDK.serverTimestamp()});
+  }
+  watchMySquadLobbies(uid,onValue,onError) {
+    const cleanUid=extractUid(uid);
+    if(!this.db||!cleanUid)throw new Error('Salas de escuadrón no disponibles.');
+    const {collection,query,where,onSnapshot}=this.firestoreSDK;
+    const squads=new Map();
+    const emit=()=>onValue([...squads.values()]);
+    const listen=(field)=>{
+      const ref=query(collection(this.db,'squadLobbies'),where(field,'==',cleanUid));
+      return onSnapshot(ref,snapshot=>{
+        for(const [id,squad] of squads)if(squad[field]===cleanUid)squads.delete(id);
+        for(const item of snapshot.docs)squads.set(item.id,{...item.data(),id:item.id});
+        emit();
+      },onError);
+    };
+    const stopLeader=listen('leaderUid'),stopMember=listen('memberUid');
+    return ()=>{stopLeader();stopMember();};
   }
   watchPresence(uid,onValue,onError) {
     const cleanUid=extractUid(uid);

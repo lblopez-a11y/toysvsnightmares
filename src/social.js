@@ -31,7 +31,7 @@ export class SocialSystem {
  }
 
  setSession(user,guest=false,profile=null){
-  this.disconnect();this.account.stopPresence?.();this.user=user;this.friends=[];this.sentInvites.clear();this.presence.clear();const revision=++this.revision;
+  this.disconnect();this.account.stopPresence?.();this.user=user;this.friends=[];this.sentInvites.clear();this.presence.clear();this.currentSquadId=null;this.currentSquad=null;this.startedSquads?.clear();const revision=++this.revision;
   if(!user){
    this.myPlayerId.textContent=guest?'INVITADO':'INICIA SESIÓN';this.sendBtn.disabled=true;
    this.setStatus(guest?'Inicia sesión para usar las solicitudes de amistad.':'');
@@ -50,6 +50,7 @@ export class SocialSystem {
   this.unsubscribers.push(this.account.watchPlayerCollection(user.uid,'friendRequests',items=>this.renderRequests(items),error=>this.setStatus(error.message||'No se pudieron cargar las solicitudes.')));
   this.unsubscribers.push(this.account.watchPlayerCollection(user.uid,'friends',items=>this.renderFriends(items),error=>this.setStatus(error.message||'No se pudo cargar la lista de amigos.')));
   if(this.account.watchIncomingSquadInvites)this.unsubscribers.push(this.account.watchIncomingSquadInvites(user.uid,items=>this.renderIncomingInvites(items),error=>this.notify(error.message||'No se pudieron cargar las invitaciones.')));
+  if(this.account.watchMySquadLobbies)this.unsubscribers.push(this.account.watchMySquadLobbies(user.uid,items=>this.renderSquadLobbies(items),error=>this.notify(error.message||'No se pudo cargar el escuadrón.')));
  }
 
  async loadTag(revision){
@@ -174,7 +175,7 @@ export class SocialSystem {
   button.disabled=true;button.textContent='Enviando...';status.textContent='';
   try{
    await this.account.sendSquadInvite(uid);
-   this.sentInvites.add(uid);button.textContent='Enviada';status.textContent='Invitación enviada. Aceptarla confirma disponibilidad; las salas online aún no están implementadas.';
+   this.sentInvites.add(uid);button.textContent='Enviada';status.textContent='Invitación enviada. Al aceptarla, podréis preparar el escuadrón.';
   }catch(error){
    button.disabled=false;button.textContent='Invitar';status.textContent=error.message||'No se pudo enviar la invitación.';
   }
@@ -187,7 +188,7 @@ export class SocialSystem {
   const toast=document.createElement('section');toast.id='invite-toast';toast.className='invite-toast';toast.setAttribute('role','status');toast.setAttribute('aria-label','Invitación de escuadrón');
   const message=document.createElement('p'),sender=document.createElement('strong');
   sender.textContent=pending.fromName||pending.fromTag||'Un amigo';message.append(sender,document.createTextNode(' te ha invitado a su escuadrón.'));
-  const note=document.createElement('small');note.textContent='Aceptar confirma disponibilidad; todavía no hay salas multijugador.';
+  const note=document.createElement('small');note.textContent='Al aceptar, entraréis en una sala para marcaros como listos.';
   const actions=document.createElement('div');actions.className='invite-toast-actions';
   const accept=document.createElement('button');accept.type='button';accept.className='btn-accept';accept.textContent='Aceptar';
   const reject=document.createElement('button');reject.type='button';reject.className='btn-reject';reject.textContent='Rechazar';
@@ -195,12 +196,79 @@ export class SocialSystem {
    accept.disabled=reject.disabled=true;
    try{
     await this.account.respondToSquadInvite(pending.id,status);
-    toast.remove();this.notify(status==='accepted'?'Invitación aceptada.':'Invitación rechazada.');
+    toast.remove();this.notify(status==='accepted'?'Invitación aceptada; ya estás en el escuadrón.':'Invitación rechazada.');
    }catch(error){accept.disabled=reject.disabled=false;this.notify(error.message||'No se pudo responder a la invitación.');}
   };
   accept.addEventListener('click',()=>void respond('accepted'),{signal:this.abort.signal});
   reject.addEventListener('click',()=>void respond('rejected'),{signal:this.abort.signal});
   actions.append(accept,reject);toast.append(message,note,actions);document.body.append(toast);
+ }
+
+ renderSquadLobbies(items){
+  const squad=items.filter(item=>item.status==='in_lobby'||item.status==='starting').sort((a,b)=>(b.updatedAt?.toMillis?.()||0)-(a.updatedAt?.toMillis?.()||0))[0];
+  const openButton=document.getElementById('open-current-squad');
+  if(!squad){this.currentSquadId=null;this.currentSquad=null;if(this.squadModal)this.squadModal.hidden=true;if(openButton)openButton.hidden=true;return;}
+  const entering=this.currentSquadId!==squad.id;
+  this.currentSquadId=squad.id;
+  if(openButton)openButton.hidden=squad.status!=='in_lobby';
+  if(squad.status==='starting'){
+   if(!this.startedSquads?.has(squad.id)){
+    this.startedSquads??=new Set();this.startedSquads.add(squad.id);
+    if(this.squadModal)this.squadModal.hidden=true;
+    this.onSquadStarting?.(squad);
+   }
+   return;
+  }
+  if(this.startedSquads?.has(squad.id))this.startedSquads.delete(squad.id);
+  this.currentSquad=squad;
+  this.renderSquad(squad);
+  if(entering&&this.squadModal)this.squadModal.hidden=false;
+ }
+
+ setSquadModal(modal,onStarting){
+  this.squadModal=modal;this.onSquadStarting=onStarting;
+  modal.querySelector('[data-close-squad]').addEventListener('click',()=>{modal.hidden=true;},{signal:this.abort.signal});
+  modal.addEventListener('click',event=>{
+   const button=event.target.closest('[data-squad-action]');
+   if(button&&!button.disabled)void this.updateSquad(button.dataset.squadAction);
+  },{signal:this.abort.signal});
+  modal.addEventListener('keydown',event=>{if(event.key==='Escape')modal.hidden=true;},{signal:this.abort.signal});
+ }
+
+ openSquadModal(){
+  if(!this.currentSquad||!this.squadModal)return;
+  this.renderSquad(this.currentSquad);this.squadModal.hidden=false;
+ }
+
+ renderSquad(squad){
+  if(!this.squadModal)return;
+  const leader=squad.leaderUid===this.user?.uid,ownReady=leader?squad.leaderReady:squad.memberReady;
+  const roster=this.squadModal.querySelector('#squad-members');
+  const member=(name,role,ready)=>{const row=document.createElement('div');row.className='squad-member';const identity=document.createElement('strong');identity.textContent=name||role;const label=document.createElement('span');label.textContent=`${role} · ${ready?'Listo':'Esperando'}`;label.dataset.ready=String(ready);row.append(identity,label);return row;};
+  roster.replaceChildren(member(squad.leaderName,'Líder',squad.leaderReady),member(squad.memberName,'Miembro',squad.memberReady));
+  const readyButton=this.squadModal.querySelector('[data-squad-action="ready"]');
+  readyButton.textContent=ownReady?'Cancelar listo':'¡Estoy Listo!';
+  readyButton.setAttribute('aria-pressed',String(ownReady));
+  const startButton=this.squadModal.querySelector('[data-squad-action="start"]');
+  startButton.disabled=!leader||!squad.leaderReady||!squad.memberReady||squad.status!=='in_lobby';
+  this.squadModal.querySelector('#squad-status').textContent=leader
+   ?(squad.memberReady?'Ambos están listos. Ya puedes iniciar el despliegue.':'Espera a que el miembro esté listo.')
+   :(squad.leaderReady?'Marca que estás listo para que el líder pueda iniciar.':'Espera a que el líder esté listo.');
+ }
+
+ async updateSquad(action){
+  if(!this.currentSquadId)return;
+  const button=this.squadModal.querySelector(`[data-squad-action="${action}"]`);button.disabled=true;
+  try{
+   if(action==='start')await this.account.updateSquadState(this.currentSquadId,{status:'starting'});
+   else{
+    const squad=this.currentSquad;
+    if(!squad)throw new Error('No se encontró el escuadrón.');
+    const key=squad.leaderUid===this.user.uid?'leaderReady':'memberReady';
+    await this.account.updateSquadState(this.currentSquadId,{[key]:!squad[key]});
+   }
+  }catch(error){this.notify(error.message||'No se pudo actualizar el escuadrón.');}
+  finally{button.disabled=false;}
  }
 
  renderList(container,items,message){
@@ -210,7 +278,7 @@ export class SocialSystem {
  }
 
  setStatus(message){if(this.statusMsg)this.statusMsg.textContent=message;}
- disconnect(){clearInterval(this.presenceRefreshInterval);this.presenceRefreshInterval=null;for(const unsubscribe of this.unsubscribers)unsubscribe?.();this.unsubscribers=[];for(const unsubscribe of this.presenceUnsubs.values())unsubscribe?.();this.presenceUnsubs.clear();this.presence.clear();document.getElementById('invite-toast')?.remove();}
+ disconnect(){clearInterval(this.presenceRefreshInterval);this.presenceRefreshInterval=null;for(const unsubscribe of this.unsubscribers)unsubscribe?.();this.unsubscribers=[];for(const unsubscribe of this.presenceUnsubs.values())unsubscribe?.();this.presenceUnsubs.clear();this.presence.clear();if(this.squadModal)this.squadModal.hidden=true;const openButton=document.getElementById('open-current-squad');if(openButton)openButton.hidden=true;document.getElementById('invite-toast')?.remove();}
  dispose(){this.disconnect();this.account.stopPresence?.();this.abort.abort();this.user=null;}
 }
 

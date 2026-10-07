@@ -58,6 +58,6 @@ export function statusTick(battle,actor,dt){
  if(poisonTime)battle.damage(actor,5*Math.min(dt,poisonTime),actor.poisonSource,true);
  if(actor.shield&&!s.shieldTime){actor.shield=0;delete s.slimeShield;}
  if(actor.link){actor.link.time-=dt;const {target,type}=actor.link;if(!target.active||actor.link.time<=0)actor.link=null;else if(type==='drain'&&actor.position.distanceTo(target.position)<25&&battle.sight(actor,target)){battle.damage(target,10*dt,actor);battle.heal(actor,10*dt,actor);battle.effects.tracer(actor.body.center,target.body.center,'#bd8de3');}}
- if(s.charge){battle.teleportForward(actor,dt*24);for(const other of battle.actors)if(other.active&&other.team!==actor.team&&other.position.distanceTo(actor.position)<3&&!s.chargeHit.has(other)){s.chargeHit.add(other);battle.damage(other,30,actor);other.status.stun=.7;battle.push(other,actor.position,3);}}
+ if(s.charge){if(!actor.remoteHuman)battle.teleportForward(actor,dt*24);for(const other of battle.actors)if(other.active&&other.team!==actor.team&&other.position.distanceTo(actor.position)<3&&!s.chargeHit.has(other)){s.chargeHit.add(other);battle.damage(other,30,actor);other.status.stun=.7;battle.push(other,actor.position,3);}}
  actor.model.visible=actor.active&&(!s.cloak||actor===battle.player&&Math.sin(battle.time*16)>-.2);
 }

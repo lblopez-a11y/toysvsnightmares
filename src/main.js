@@ -170,7 +170,7 @@ export class GameEngine {
     window.addEventListener('pagehide', event => { if (!event.persisted) this.dispose(); }, options);
     window.addEventListener('online',()=>void this.progress.flush(),options);
   }
-  prepareMatch(){this.battle.start();this.updateFollowCamera(1,true);document.querySelector('#lock-message').textContent='Haz clic para ocultar el cursor y controlar la cámara. ESC pausa y libera el ratón.';this.state.set('ready');}
+  prepareMatch(options={}){this.battle.start(options.squad?'horde':this.lobby?.mode||'horde',options.squad?4:this.lobby?.size||4,options.squad||null);this.updateFollowCamera(1,true);document.querySelector('#lock-message').textContent='Haz clic para ocultar el cursor y controlar la cámara. ESC pausa y libera el ratón.';this.state.set('ready');}
   showLockError(message){document.querySelector('#lock-message').textContent=message;document.querySelector('.browser-help').open=true;this.ui.toast(message);}
   async requestPlay(reset) {
     if (!['ready','paused','dead'].includes(this.state.value)) return;
@@ -186,10 +186,12 @@ export class GameEngine {
     this.playerVisual.visible = true;
     this.lastTime = 0; this.accumulator = 0;
     this.state.set('playing');
+    this.battle.setSquadPlaying(true);
     document.querySelector('#look-hint').textContent='WASD mover · Ratón libre · ESC libera el cursor';
     this.updateFollowCamera(1, fromMenu);
   }
   onUnlock() {
+    this.battle?.setSquadPlaying(false);
     if (this.state.value === 'playing') this.state.set('paused');
     this.accumulator = 0;
   }
