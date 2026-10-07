@@ -181,8 +181,10 @@ export class AccountService {
   }
   async publishSquadPlayer(squadId,data){
     if(!this.user||!this.db)throw new Error('Inicia sesión para sincronizar la partida.');
+    const characterId=data.characterId||data.hero;
+    if(typeof characterId!=='string'||!characterId)throw new Error('Personaje de escuadrón inválido.');
     const ref=this.firestoreSDK.doc(this.squadRef(squadId),'players',extractUid(this.user.uid));
-    await this.firestoreSDK.setDoc(ref,{...data,uid:extractUid(this.user.uid),sentAt:this.firestoreSDK.serverTimestamp()});
+    await this.firestoreSDK.setDoc(ref,{...data,characterId,vx:Number.isFinite(data.vx)?data.vx:0,vy:Number.isFinite(data.vy)?data.vy:0,vz:Number.isFinite(data.vz)?data.vz:0,uid:extractUid(this.user.uid),sentAt:this.firestoreSDK.serverTimestamp()});
   }
   async publishSquadGame(squadId,data){
     if(!this.user||!this.db)throw new Error('Inicia sesión para sincronizar la partida.');

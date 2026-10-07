@@ -103,11 +103,13 @@ test('el transporte de partida publica el estado propio y escucha el estado comp
   onSnapshot:(ref,onValue)=>{subscriptions.push(ref.path);if(ref.path.endsWith('/game/current'))onValue({exists:()=>true,data:()=>({match:{wave:2}})});return ()=>{};},
  };
 
- await service.publishSquadPlayer('squad-2',{hero:'captain',x:1,y:0,z:2,yaw:0,pitch:0,moving:true,firing:false,fireSeq:0,abilitySeq:[0,0,0],reloadSeq:0,upgradeSeq:[0,0,0],playing:true});
+ await service.publishSquadPlayer('squad-2',{hero:'captain',characterId:'captain',x:1,y:0,z:2,vx:3,vy:0,vz:-2,yaw:0,pitch:0,moving:true,firing:false,fireSeq:0,abilitySeq:[0,0,0],reloadSeq:0,upgradeSeq:[0,0,0],playing:true});
  await service.publishSquadGame('squad-2',{actors:[],hostPlayer:{hero:'captain'},match:{wave:2},shots:[]});
  assert.equal(writes[0].path,'squadLobbies/squad-2/players/memberUid');
  assert.equal(writes[0].data.uid,'memberUid');
  assert.equal(typeof writes[0].data.sentAt,'number');
+ assert.equal(writes[0].data.characterId,'captain');
+ assert.deepEqual([writes[0].data.vx,writes[0].data.vy,writes[0].data.vz],[3,0,-2]);
  assert.equal(writes[1].path,'squadLobbies/squad-2/game/current');
  assert.equal(writes[1].data.updatedAt,456);
 

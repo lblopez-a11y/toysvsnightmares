@@ -20,7 +20,7 @@ export class Battle extends ModeSystems {
   super();this.engine=engine;this.world=engine.world;this.ui=engine.ui;this.match=new Match();this.effects=new Effects(this.world);this.damageNumbers=new DamageNumbers();this.base=new THREE.Vector3();this.objective=new THREE.Vector3();this.time=0;this.started=false;
   this.nav=new Navigation(GAME.worldSize,2.5,(x,z)=>this.world.blocked(x,z,0,1));this.objectiveField=this.nav.field();this.navTimer=0;this.banks={};this.steering=new BotSteering(this.world);this.cameraRight=new THREE.Vector3();this.cameraUp=new THREE.Vector3();this.coreTarget={isCore:true,body:{center:new THREE.Vector3(0,1.3,0)}};this.coreHitArea=new THREE.Sphere(this.coreTarget.body.center,1.7);
   for(const team of ['toys','nightmares']){const specs=ROSTER.filter(c=>c.team===team);this.banks[team]=new ObjectPool(team==='nightmares'?24:6,i=>{const c=specs[i%6],model=createRosterModel(this.world,c.id);this.world.root.add(model);model.visible=false;const actor=new Character(model,team,c.name,c.hp,10*c.speed).configure(c.id);actor.slot=i;actor.homeId=c.id;actor.homeModel=model;actor.label=this.makeLabel(actor);return actor;},actor=>{actor.active=false;actor.model.visible=false;actor.label.hidden=true;});}
-  this.player=new Character(engine.playerVisual,'toys','Capitán Espuma',125,10).configure('captain');this.player.position=engine.position;this.actors=[this.player,...this.banks.toys.items,...this.banks.nightmares.items];
+  this.player=new Character(engine.playerVisual,'toys','Capitán Espuma',125,10).configure('captain');this.player.position=engine.position;this.lastPlayerPosition=engine.position.clone();this.playerVelocity={vx:0,vy:0,vz:0};this.actors=[this.player,...this.banks.toys.items,...this.banks.nightmares.items];
   const scanMaterial=new THREE.MeshStandardMaterial({roughness:.45,metalness:.08,color:'#e898e1',wireframe:true,transparent:true,opacity:.5,depthTest:false,depthWrite:false});
   for(const actor of this.actors){const silhouette=new THREE.Mesh(this.world.boxGeometry,scanMaterial);silhouette.visible=false;silhouette.renderOrder=10;this.world.root.add(silhouette);actor.silhouette=silhouette;}
   this.objectiveLabel=document.createElement('div');this.objectiveLabel.className='objective-marker';this.objectiveLabel.hidden=true;document.querySelector('#actor-labels').append(this.objectiveLabel);
@@ -53,7 +53,7 @@ export class Battle extends ModeSystems {
   actor.model.visible=false;
   if(MINIONS[id]){actor.minionModels??=new Map();if(!actor.minionModels.has(id)){const model=createMinionModel(this.world,id);this.world.root.add(model);actor.minionModels.set(id,model);}actor.model=actor.minionModels.get(id);}else actor.model=boss?actor.bossModel:actor.homeModel;
   applyCharacterGraphics(actor.model,this.engine);
-  actor.position=actor.model.position;actor.configure(id,boss);const p=this.spawnPoint(actor.team,index);actor.spawn(p.x,p.z);actor.status.spawn=2;actor.route=planRoute(actor.team,index,this.objective);actor.routeField=actor.routeField||this.nav.field();actor.routeGoal=new THREE.Vector3();actor.routeRefresh=0;actor.navGoal=null;actor.minionTarget=null;actor.minionPendingTarget=null;actor.minionTargetTimer=0;resetStuck(actor);actor.portalCooldown=0;actor.aiTimer=1+Math.random()*3;actor.label.querySelector('span').textContent=boss?'JEFE · TITÁN · 1000 HP':actor.name;
+  actor.position=actor.model.position;actor.configure(id,boss);const p=this.spawnPoint(actor.team,index);actor.spawn(p.x,p.z);actor.status.spawn=2;actor.route=planRoute(actor.team,index,this.objective);actor.routeField=actor.routeField||this.nav.field();actor.routeGoal=new THREE.Vector3();actor.routeRefresh=0;actor.navGoal=null;actor.remoteTarget=null;actor.remoteAim=null;actor.minionTarget=null;actor.minionPendingTarget=null;actor.minionTargetTimer=0;resetStuck(actor);actor.portalCooldown=0;actor.aiTimer=1+Math.random()*3;actor.label.querySelector('span').textContent=boss?'JEFE · TITÁN · 1000 HP':actor.name;
  }
 
  startSquadSync(squad){
@@ -69,7 +69,7 @@ export class Battle extends ModeSystems {
   if(!this.squadSync)return;
   for(const unsubscribe of this.squadSync.unsubs||[])unsubscribe?.();
   this.squadSync=null;
-  for(const actor of this.actors)if(actor.remoteHuman){actor.remoteHuman=false;actor.remoteUid=null;}
+  for(const actor of this.actors)if(actor.remoteHuman){actor.remoteHuman=false;actor.remoteUid=null;actor.remoteTarget=null;actor.remoteAim=null;actor.remoteState=null;}
  }
  squadError(error){
   console.error('Sincronización del escuadrón:',error);
@@ -93,7 +93,7 @@ export class Battle extends ModeSystems {
   const p=this.player.position,input=this.engine.input;
   sync.playerPending=true;
   void this.engine.account.publishSquadPlayer(sync.id,{
-   hero:this.player.id,x:p.x,y:p.y,z:p.z,yaw:input.yaw,pitch:input.pitch,
+   hero:this.player.id,characterId:this.player.id,x:p.x,y:p.y,z:p.z,...this.playerVelocity,yaw:input.yaw,pitch:input.pitch,
    moving:this.player.moving,aiming:input.aiming,
    firing:input.firing||input.down('KeyF'),fireSeq:sync.fireSeq,
    abilitySeq:sync.abilitySeq,reloadSeq:sync.reloadSeq,upgradeSeq:sync.upgradeSeq,
@@ -112,11 +112,12 @@ export class Battle extends ModeSystems {
   if(sync.gameTimer<=0&&!sync.gamePending){this.publishSquadGame();sync.gameTimer=.1;}
  }
  ensureRemoteActor(uid,hero){
+  const characterId=CHARACTERS[hero]?.team==='toys'?hero:'captain';
   let actor=this.actors.find(item=>item.remoteHuman&&item.remoteUid===uid);
-  if(actor){if(hero&&actor.id!==hero&&CHARACTERS[hero])this.spawnActor(actor,false,actor.slot,hero);return actor;}
+  if(actor){if(actor.id!==characterId)this.spawnActor(actor,false,actor.slot,characterId);return actor;}
   actor=this.banks.toys.acquire();
   if(!actor)throw new Error('No hay espacio para el jugador del escuadrón.');
-  this.spawnActor(actor,false,actor.slot,CHARACTERS[hero]?.team==='toys'?hero:'captain');
+  this.spawnActor(actor,false,actor.slot,characterId);
   actor.remoteHuman=true;actor.remoteUid=uid;actor.route=null;
   return actor;
  }
@@ -125,19 +126,19 @@ export class Battle extends ModeSystems {
   if(!sync||!data)return;
   const sentAt=data.sentAt?.toMillis?.()??data.sentAt;
   const fresh=Number.isFinite(sentAt)&&Date.now()-sentAt<3500;
-  const actor=this.ensureRemoteActor(sync.remoteUid,data.hero);
+  const characterId=data.characterId||data.hero;
+  const actor=this.ensureRemoteActor(sync.remoteUid,characterId);
   actor.remoteFresh=fresh&&data.playing;
   if(!actor.remoteFresh){actor.active=false;actor.model.visible=false;actor.remoteTarget=null;return;}
-  if(!actor.active)this.spawnActor(actor,false,actor.slot,CHARACTERS[data.hero]?.team==='toys'?data.hero:'captain');
-  const target={x:data.x,y:data.y,z:data.z,yaw:data.yaw+Math.PI,aimYaw:data.yaw,aimPitch:data.pitch};
+  if(!actor.active)this.spawnActor(actor,false,actor.slot,CHARACTERS[characterId]?.team==='toys'?characterId:'captain');
+  else if(actor.id!==characterId&&CHARACTERS[characterId]?.team==='toys')this.spawnActor(actor,false,actor.slot,characterId);
+  const target={x:data.x,y:data.y,z:data.z,vx:data.vx||0,vy:data.vy||0,vz:data.vz||0,yaw:data.yaw+Math.PI,aimYaw:data.yaw,aimPitch:data.pitch,receivedAt:performance.now()};
   if(!actor.remoteTarget){
    actor.position.set(target.x,target.y,target.z);
    actor.model.rotation.y=target.yaw;
-   actor.remoteState={...data};
-  }else{
-   actor.remoteState={...data,yaw:actor.remoteState?.yaw??data.yaw,pitch:actor.remoteState?.pitch??data.pitch};
+   actor.remoteAim={yaw:target.aimYaw,pitch:target.aimPitch};
   }
-  actor.remoteTarget=target;actor.active=true;actor.model.visible=true;
+  actor.remoteTarget=target;actor.remoteAim??={yaw:target.aimYaw,pitch:target.aimPitch};actor.remoteState={...data,yaw:actor.remoteAim.yaw,pitch:actor.remoteAim.pitch};actor.active=true;actor.model.visible=true;
   actor.moving=!!data.moving;actor.syncHitboxes();
   actor.remoteFresh=true;
   if(data.reloadSeq>sync.remoteReloadSeq){sync.remoteReloadSeq=data.reloadSeq;this.reloadWeapon(actor);}
@@ -182,7 +183,7 @@ export class Battle extends ModeSystems {
   if(sync.gamePending){sync.forceGameWrite||=force;return;}
   const syncStatus=actor=>Object.fromEntries(['cloak','stun','sleep','slow','haste','root','flight','hover','jump','spawn','shieldTime','guard','defense','power','weaken','aura','blind','scan'].filter(key=>typeof actor.status[key]==='boolean'||Number.isFinite(actor.status[key])).map(key=>[key,actor.status[key]]));
   const serialize=actor=>({team:actor.team,slot:actor.slot,id:actor.id,boss:!!actor.boss,active:!!actor.active,state:actor.state,moving:!!actor.moving,x:actor.position.x,y:actor.position.y,z:actor.position.z,yaw:actor.model.rotation.y,health:actor.health,maxHealth:actor.maxHealth,shield:actor.shield||0,status:syncStatus(actor),deathTime:Number(actor.deathTime)||0,ammo:Number(actor.ammo)||0,reload:Number(actor.reload)||0,cooldowns:Array.from(actor.cooldowns)});
-  const hostPlayer={hero:this.player.id,active:this.player.active,x:this.player.position.x,y:this.player.position.y,z:this.player.position.z,yaw:this.player.model.rotation.y,health:this.player.health,maxHealth:this.player.maxHealth,shield:this.player.shield||0,status:syncStatus(this.player),deathTime:Number(this.player.deathTime)||0,ammo:Number(this.player.ammo)||0,reload:Number(this.player.reload)||0,cooldowns:Array.from(this.player.cooldowns)};
+  const hostPlayer={hero:this.player.id,characterId:this.player.id,active:this.player.active,x:this.player.position.x,y:this.player.position.y,z:this.player.position.z,...this.playerVelocity,yaw:this.player.model.rotation.y,health:this.player.health,maxHealth:this.player.maxHealth,shield:this.player.shield||0,status:syncStatus(this.player),deathTime:Number(this.player.deathTime)||0,ammo:Number(this.player.ammo)||0,reload:Number(this.player.reload)||0,cooldowns:Array.from(this.player.cooldowns)};
   const actors=[];for(const team of ['toys','nightmares'])for(const actor of this.banks[team].items)actors.push({...serialize(actor),...(actor.remoteUid?{remoteUid:actor.remoteUid}:{})});
   const match={wave:this.match.wave,remaining:this.match.remaining,phase:this.match.phase,timer:this.match.timer,duration:this.time,baseHealth:this.match.baseHealth,kills:this.match.kills,score:this.match.score,sector:this.match.sector,capture:this.match.capture,contested:this.match.contested,points:this.match.points,winner:this.match.winner,wavePoints:this.match.wavePoints,upgrades:this.match.upgrades};
   sync.gamePending=true;
@@ -191,8 +192,15 @@ export class Battle extends ModeSystems {
  applySquadGame(state){
   const sync=this.squadSync;if(!sync||sync.leader)return;
   const apply=(actor,data,local=false)=>{
-   if(data.id&&actor.id!==data.id&&(CHARACTERS[data.id]||MINIONS[data.id]))this.spawnActor(actor,!!data.boss,data.slot,data.id);
-   actor.position.set(data.x,data.y,data.z);actor.model.position.copy(actor.position);actor.model.rotation.y=data.yaw;
+   const characterId=data.characterId||data.hero||data.id;
+   if(characterId&&actor.id!==characterId&&(CHARACTERS[characterId]||MINIONS[characterId]))this.spawnActor(actor,!!data.boss,data.slot,characterId);
+   if(actor.remoteHuman&&!local){
+    const target={x:data.x,y:data.y,z:data.z,vx:data.vx||0,vy:data.vy||0,vz:data.vz||0,yaw:data.yaw,aimYaw:data.aimYaw??data.yaw,aimPitch:data.aimPitch||0,receivedAt:performance.now()};
+    if(!actor.remoteTarget){actor.position.set(target.x,target.y,target.z);actor.model.rotation.y=target.yaw;actor.remoteAim={yaw:target.aimYaw,pitch:target.aimPitch};}
+    actor.remoteTarget=target;actor.remoteAim??={yaw:target.aimYaw,pitch:target.aimPitch};actor.remoteState={...data,yaw:actor.remoteAim.yaw,pitch:actor.remoteAim.pitch};
+   }else{
+    actor.position.set(data.x,data.y,data.z);actor.model.position.copy(actor.position);actor.model.rotation.y=data.yaw;
+   }
    actor.active=!!data.active;actor.deathTime=data.deathTime||0;actor.model.visible=actor.active||actor.deathTime>0;actor.health=data.health;actor.maxHealth=data.maxHealth;
    actor.state=data.state||actor.state;actor.moving=!!data.moving;
    actor.shield=data.shield||0;actor.status=data.status||{};
@@ -202,8 +210,9 @@ export class Battle extends ModeSystems {
    if(local&&actor.health<=0&&this.engine.state.value==='playing')this.engine.handleDeath({killer:'Una pesadilla'});
   };
   if(state.hostPlayer){
-   const remote=this.ensureRemoteActor(sync.remoteUid,state.hostPlayer.hero);
-   apply(remote,{...state.hostPlayer,id:state.hostPlayer.hero,team:'toys',slot:remote.slot,state:'PATROL',moving:false},false);
+   const characterId=state.hostPlayer.characterId||state.hostPlayer.hero;
+   const remote=this.ensureRemoteActor(sync.remoteUid,characterId);
+   apply(remote,{...state.hostPlayer,id:characterId,characterId,team:'toys',slot:remote.slot,state:'PATROL',moving:false},false);
   }
   for(const data of state.actors||[]){
    const bank=this.banks[data.team],actor=bank?.items.find(item=>item.slot===data.slot);if(!actor)continue;
@@ -221,12 +230,12 @@ export class Battle extends ModeSystems {
   if(['won','lost'].includes(this.match.phase)&&!['result','menu','login'].includes(this.engine.state.value)){this.result.won=this.match.phase==='won';this.engine.finishMatch(this.result.won);}
  }
 
- resetPlayer(){const p=this.spawnPoint(this.player.team,this.playerSpawnIndex||1);this.engine.position.set(p.x,0,p.z);this.player.spawn(p.x,p.z);this.player.position=this.engine.position;this.player.maxHealth=this.player.spec.hp+(this.match.upgrades.health||0)*20;this.player.health=this.player.maxHealth;this.player.status.spawn=3;this.player.sinceDamage=0;this.player.portalCooldown=0;this.engine.verticalSpeed=0;this.engine.input.yaw=Math.atan2(this.objective.x-p.x,this.objective.z-p.z)-Math.PI;this.engine.input.pitch=.035;this.engine.playerVisual.position.copy(this.engine.position);this.engine.playerVisual.visible=true;this.player.syncHitboxes();this.charge=0;this.updateHUD();}
+ resetPlayer(){const p=this.spawnPoint(this.player.team,this.playerSpawnIndex||1);this.engine.position.set(p.x,0,p.z);this.player.spawn(p.x,p.z);this.player.position=this.engine.position;this.lastPlayerPosition.copy(this.player.position);this.playerVelocity={vx:0,vy:0,vz:0};this.player.maxHealth=this.player.spec.hp+(this.match.upgrades.health||0)*20;this.player.health=this.player.maxHealth;this.player.status.spawn=3;this.player.sinceDamage=0;this.player.portalCooldown=0;this.engine.verticalSpeed=0;this.engine.input.yaw=Math.atan2(this.objective.x-p.x,this.objective.z-p.z)-Math.PI;this.engine.input.pitch=.035;this.engine.playerVisual.position.copy(this.engine.position);this.engine.playerVisual.visible=true;this.player.syncHitboxes();this.charge=0;this.updateHUD();}
  stop(){this.stopSquadSync();this.started=false;this.objectiveLabel.hidden=true;for(const actor of this.actors)actor.silhouette.visible=false;for(const bank of Object.values(this.banks))bank.releaseAll();for(const pool of [this.projectiles,this.zones,this.drops,this.barriers,this.portals])pool.releaseAll();this.effects.reset();this.damageNumbers.reset();this.world.ambientToys.forEach(m=>m.visible=true);this.captureRing.visible=false;this.arena.visible=false;this.rain.visible=false;this.world.core.visible=true;this.world.coreLabel.visible=true;for(const p of this.world.portals){p.group.visible=true;p.label.visible=true;}this.weather=0;this.applyWeather(0);const blind=document.querySelector('#blind-overlay');if(blind)blind.style.opacity='0';}
  spawnWave(){const total=this.match.beginWave();for(let i=0;i<total;i++){const actor=this.banks.nightmares.acquire();if(!actor)throw new Error('Pool de horda agotado');const boss=i===0&&this.match.wave%3===0;if(boss)actor.originalId=actor.id;this.spawnActor(actor,boss,i);this.effects.burst(actor.position,'#c192ed',12);}this.ui.banner(`OLEADA ${this.match.wave} / 10`,this.match.wave%3===0?'¡TITÁN DE PORCELANA! · 1000 HP':`${total} pesadillas · Protege el cofre`);}
  nearestWalkable(x,z){const at=this.nav.index(x,z);if(this.nav.walkable[at])return {x,z};let best=Infinity,result={x:0,z:12};for(let i=0;i<this.nav.walkable.length;i++)if(this.nav.walkable[i]){const px=this.nav.coordinate(i%this.nav.n),pz=this.nav.coordinate(Math.floor(i/this.nav.n)),d=(x-px)**2+(z-pz)**2;if(d<best){best=d;result.x=px;result.z=pz;}}return result;}
  fixedUpdate(dt){
-  if(!this.started)return;this.time+=dt;this.result.duration=this.time;const input=this.engine.input;
+  if(!this.started)return;if(dt>0){this.playerVelocity.vx=(this.player.position.x-this.lastPlayerPosition.x)/dt;this.playerVelocity.vy=(this.player.position.y-this.lastPlayerPosition.y)/dt;this.playerVelocity.vz=(this.player.position.z-this.lastPlayerPosition.z)/dt;}this.lastPlayerPosition.copy(this.player.position);this.time+=dt;this.result.duration=this.time;const input=this.engine.input;
   if(this.squadSync&&!this.squadSync.leader){this.updateSquadSync(dt);statusTick(this,this.player,dt);this.player.moving=!!(this.engine.move.x||this.engine.move.z);this.player.syncHitboxes();for(const actor of this.actors)if(actor!==this.player)actor.animate(dt,this.time);this.player.animate(dt,this.time);this.effects.update(dt);this.damageNumbers.update(dt,this.engine.camera,true);this.world.animateEnvironment(this.time);this.hudTimer-=dt;if(this.hudTimer<=0){this.updateHUD();this.hudTimer=.1;}return;}
   this.regenerate(dt);for(const actor of this.actors)if(actor.active)statusTick(this,actor,dt);this.updateSquadSync(dt);
   if(input.consumeAction('KeyR'))this.reloadWeapon(this.player);['KeyQ','KeyE','KeyC'].forEach((key,i)=>{if(input.consumeAction(key))useAbility(this,this.player,i);});if(input.consumeAction('Digit1'))this.buyUpgrade('damage');if(input.consumeAction('Digit2'))this.buyUpgrade('health');if(input.consumeAction('Digit3'))this.buyUpgrade('repair');
@@ -285,7 +294,7 @@ export class Battle extends ModeSystems {
  followRoute(actor,dt){const route=actor.route;let point=route.points[route.index];if(!point)return;if(Math.hypot(actor.position.x-point.x,actor.position.z-point.z)<5){route.index++;point=route.points[route.index];if(!point)return;}const safe=this.nearestWalkable(point.x,point.z);actor.routeGoal.set(safe.x,0,safe.z);if(Math.hypot(actor.position.x-safe.x,actor.position.z-safe.z)<5){route.index++;return;}actor.state='PATROL';this.moveBot(actor,actor.routeGoal,dt);}
  regenerate(dt){if(!this.player.active)return;const before=this.player.sinceDamage||0;this.player.sinceDamage=before+dt;const healingTime=Math.max(0,this.player.sinceDamage-5)-Math.max(0,before-5);if(healingTime>0)this.heal(this.player,10*healingTime,this.player);}
  updateHUD(){this.ui.health(this.player.health,this.player.shield,this.player.maxHealth);this.ui.battle(this);['q','e','c'].forEach((key,i)=>this.ui.cooldown(key,this.player.cooldowns[i],this.player.spec.abilities[i].cooldown));}
- updateRemoteActors(){for(const actor of this.actors)if(actor.remoteHuman&&actor.remoteFresh&&actor.remoteTarget){const target=actor.remoteTarget;actor.position.x+=(target.x-actor.position.x)*.25;actor.position.y+=(target.y-actor.position.y)*.25;actor.position.z+=(target.z-actor.position.z)*.25;const angle=Math.atan2(Math.sin(target.yaw-actor.model.rotation.y),Math.cos(target.yaw-actor.model.rotation.y));actor.model.rotation.y+=angle*.25;const aimAngle=Math.atan2(Math.sin(target.aimYaw-actor.remoteState.yaw),Math.cos(target.aimYaw-actor.remoteState.yaw));actor.remoteState.yaw+=aimAngle*.25;actor.remoteState.pitch+=(target.aimPitch-actor.remoteState.pitch)*.25;actor.syncHitboxes();}}
- update(dt){this.updateRemoteActors();this.damageNumbers.update(dt,this.engine.camera,this.engine.state.value==='playing');this.recoil=Math.max(0,this.recoil-dt*7);this.hit=Math.max(0,this.hit-dt);this.aimBlend=(this.aimBlend||0)+((this.engine.input.aiming?1:0)-(this.aimBlend||0))*(1-Math.exp(-12*dt));this.ui.recoil(this.recoil,this.aimBlend);document.querySelector('#hit-confirm').style.opacity=this.hit>0?'1':'0';const blind=document.querySelector('#blind-overlay');if(blind)blind.style.opacity=this.player.status.blind?'.94':'0';this.objectiveLabel.hidden=this.engine.state.value!=='playing'||this.match.mode==='confirmed';if(!this.objectiveLabel.hidden){this.screen.copy(this.objective);this.screen.y=5;this.screen.project(this.engine.camera);this.objectiveLabel.hidden=this.screen.z>1||Math.abs(this.screen.x)>1||Math.abs(this.screen.y)>1;this.objectiveLabel.textContent=`${this.match.mode==='horde'?'▣ COFRE':String.fromCharCode(65+Math.min(2,this.match.sector))+' · ZONA'} · ${Math.round(this.player.position.distanceTo(this.objective))} m`;this.objectiveLabel.style.transform=`translate(${(this.screen.x*.5+.5)*innerWidth}px,${(-this.screen.y*.5+.5)*innerHeight}px) translate(-50%,-100%)`;}for(const actor of this.actors){actor.silhouette.visible=actor.active&&actor.team!==this.player.team&&!!(actor.status.reveal||this.player.status.scan)&&this.engine.state.value==='playing';if(actor.silhouette.visible){actor.silhouette.position.copy(actor.body.center);actor.silhouette.scale.set(actor.body.radius*2,actor.spec.height,actor.body.radius*1.3);}if(!actor.label)continue;if(!actor.active||actor.status.cloak||this.engine.state.value!=='playing'){actor.label.hidden=true;continue;}this.screen.copy(actor.head.center);this.screen.y+=.5;this.screen.project(this.engine.camera);actor.label.hidden=!(this.screen.z<1&&this.screen.z>-1&&Math.abs(this.screen.x)<1.1&&Math.abs(this.screen.y)<1.1&&(actor.team===this.player.team||actor.status.reveal||this.player.status.scan||this.sight(this.player,actor)));if(actor.label.hidden)continue;actor.label.style.transform=`translate(${(this.screen.x*.5+.5)*innerWidth}px,${(-this.screen.y*.5+.5)*innerHeight}px) translate(-50%,-100%)`;actor.healthBar.style.width=`${actor.health/actor.maxHealth*100}%`;actor.label.dataset.state=actor.state;}}
+ updateRemoteActors(dt){for(const actor of this.actors)if(actor.remoteHuman&&actor.remoteTarget){const target=actor.remoteTarget,lead=Math.min(.08,Math.max(0,(performance.now()-target.receivedAt)/1000));actor.position.x+=(target.x+target.vx*lead-actor.position.x)*.15;actor.position.y+=(target.y+target.vy*lead-actor.position.y)*.15;actor.position.z+=(target.z+target.vz*lead-actor.position.z)*.15;const angle=Math.atan2(Math.sin(target.yaw-actor.model.rotation.y),Math.cos(target.yaw-actor.model.rotation.y));actor.model.rotation.y+=angle*.15;const aimAngle=Math.atan2(Math.sin(target.aimYaw-actor.remoteAim.yaw),Math.cos(target.aimYaw-actor.remoteAim.yaw));actor.remoteAim.yaw+=aimAngle*.15;actor.remoteAim.pitch+=(target.aimPitch-actor.remoteAim.pitch)*.15;if(actor.remoteState){actor.remoteState.yaw=actor.remoteAim.yaw;actor.remoteState.pitch=actor.remoteAim.pitch;}actor.syncHitboxes();}}
+ update(dt){this.updateRemoteActors(dt);this.damageNumbers.update(dt,this.engine.camera,this.engine.state.value==='playing');this.recoil=Math.max(0,this.recoil-dt*7);this.hit=Math.max(0,this.hit-dt);this.aimBlend=(this.aimBlend||0)+((this.engine.input.aiming?1:0)-(this.aimBlend||0))*(1-Math.exp(-12*dt));this.ui.recoil(this.recoil,this.aimBlend);document.querySelector('#hit-confirm').style.opacity=this.hit>0?'1':'0';const blind=document.querySelector('#blind-overlay');if(blind)blind.style.opacity=this.player.status.blind?'.94':'0';this.objectiveLabel.hidden=this.engine.state.value!=='playing'||this.match.mode==='confirmed';if(!this.objectiveLabel.hidden){this.screen.copy(this.objective);this.screen.y=5;this.screen.project(this.engine.camera);this.objectiveLabel.hidden=this.screen.z>1||Math.abs(this.screen.x)>1||Math.abs(this.screen.y)>1;this.objectiveLabel.textContent=`${this.match.mode==='horde'?'▣ COFRE':String.fromCharCode(65+Math.min(2,this.match.sector))+' · ZONA'} · ${Math.round(this.player.position.distanceTo(this.objective))} m`;this.objectiveLabel.style.transform=`translate(${(this.screen.x*.5+.5)*innerWidth}px,${(-this.screen.y*.5+.5)*innerHeight}px) translate(-50%,-100%)`;}for(const actor of this.actors){actor.silhouette.visible=actor.active&&actor.team!==this.player.team&&!!(actor.status.reveal||this.player.status.scan)&&this.engine.state.value==='playing';if(actor.silhouette.visible){actor.silhouette.position.copy(actor.body.center);actor.silhouette.scale.set(actor.body.radius*2,actor.spec.height,actor.body.radius*1.3);}if(!actor.label)continue;if(!actor.active||actor.status.cloak||this.engine.state.value!=='playing'){actor.label.hidden=true;continue;}this.screen.copy(actor.head.center);this.screen.y+=.5;this.screen.project(this.engine.camera);actor.label.hidden=!(this.screen.z<1&&this.screen.z>-1&&Math.abs(this.screen.x)<1.1&&Math.abs(this.screen.y)<1.1&&(actor.team===this.player.team||actor.status.reveal||this.player.status.scan||this.sight(this.player,actor)));if(actor.label.hidden)continue;actor.label.style.transform=`translate(${(this.screen.x*.5+.5)*innerWidth}px,${(-this.screen.y*.5+.5)*innerHeight}px) translate(-50%,-100%)`;actor.healthBar.style.width=`${actor.health/actor.maxHealth*100}%`;actor.label.dataset.state=actor.state;}}
  dispose(){this.stop();this.steering.dispose();this.damageNumbers.dispose();this.objectiveLabel.remove();for(const actor of this.actors)actor.label?.remove();}
 }
