@@ -1,5 +1,3 @@
-import {audio} from './audio.js';
-
 /** Habilidades orientadas a datos. Todas usan los mismos contratos de daño,
  * estados, zonas y movimiento que las armas; Q/E/C ejecutan los slots 1/2/3. */
 export function useAbility(battle,actor,index){
@@ -47,7 +45,6 @@ export function useAbility(battle,actor,index){
   default:accepted=false;
  }
  if(!accepted){if(actor===battle.player)battle.ui.toast('Necesitas un objetivo válido o salir del efecto de control.');return false;}
- if(actor===battle.player||actor.remoteHuman)audio.play('ability');
  actor.status.aura=1.5;actor.cooldowns[index]=ability.cooldown;battle.effects.burst(actor.position,actor.spec.color,12);
  if(actor===battle.player)battle.ui.toast(ability.name);return true;
 }

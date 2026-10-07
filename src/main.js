@@ -33,6 +33,7 @@ export class GameEngine {
     this.abort = new AbortController();
     this.position = new THREE.Vector3(0, 0, 15);
     this.move = { x: 0, z: 0 }; this.verticalSpeed = 0;
+    this.footstepTimer=0;
     this.cameraTarget = new THREE.Vector3(); this.cameraDesired = new THREE.Vector3();
     this.cameraDirection = new THREE.Vector3(); this.cameraRay = new THREE.Raycaster(); this.cameraHits = [];
     this.lastTime = 0; this.accumulator = 0; this.elapsed = 0; this.mapTimer = 0;
@@ -160,9 +161,19 @@ export class GameEngine {
   }
   bindLifecycle() {
     const options = { signal: this.abort.signal };
-    const enableAudio=()=>{void audio.init().catch(error=>console.error('No se pudo iniciar el audio:',error));};
-    window.addEventListener('click',enableAudio,{...options,once:true});
-    window.addEventListener('keydown',enableAudio,{...options,once:true});
+    const enableAudio=()=>{void audio.init().then(()=>{if(this.state.value==='menu')audio.startLobbyMusic();}).catch(error=>console.error('No se pudo iniciar el audio:',error));};
+    window.addEventListener('click',enableAudio,options);
+    window.addEventListener('keydown',enableAudio,options);
+    document.addEventListener('click',event=>{
+      const control=event.target?.closest?.('button,a,[role="button"]');
+      if(!control||control.disabled||this.state.value==='playing')return;
+      void audio.init().then(()=>audio.play('click')).catch(error=>console.error('No se pudo reproducir el sonido de interfaz:',error));
+    },options);
+    document.addEventListener('pointerover',event=>{
+      const control=event.target?.closest?.('button,a,[role="button"]');
+      if(!control||control.disabled||control.contains(event.relatedTarget)||!['menu','login'].includes(this.state.value))return;
+      audio.play('hover');
+    },options);
     window.addEventListener('resize', () => this.resize(), options);
     document.addEventListener('visibilitychange', () => {
       this.lastTime = 0; this.accumulator = 0;
@@ -186,6 +197,7 @@ export class GameEngine {
   }
   onLock() {
     if (!['ready','paused','dead'].includes(this.state.value)) { this.input.unlock(); return; }
+    audio.stopLobbyMusic();
     const fromMenu = this.state.value === 'ready' || this.state.value === 'dead';
     this.playerVisual.visible = true;
     this.lastTime = 0; this.accumulator = 0;
@@ -208,6 +220,7 @@ export class GameEngine {
     this.playerVisual.visible = false; this.accumulator = 0;
     this.battle.stop();
     this.lobby.refresh();this.lobby.show('home');
+    void audio.init().then(()=>audio.startLobbyMusic()).catch(error=>console.error('No se pudo iniciar la música del lobby:',error));
   }
   finishMatch(won) {
     this.ui.result(won,this.battle.match);this.state.set('result');this.input.unlock();
@@ -233,6 +246,7 @@ export class GameEngine {
     this.camera.aspect = width / height; this.camera.updateProjectionMatrix();
   }
   fixedUpdate(dt) {
+    const previousX=this.position.x,previousZ=this.position.z;
     const x = Number(this.input.down('KeyD')) - Number(this.input.down('KeyA'));
     const z = Number(this.input.down('KeyS')) - Number(this.input.down('KeyW'));
     movementVector(x, z, this.input.yaw, this.move);
@@ -249,9 +263,12 @@ export class GameEngine {
     const previousY=this.position.y,jump=this.input.consumeJump();
     if(status.flight&&!status.root){this.verticalSpeed=0;this.position.y=Math.max(2,Math.min(18,this.position.y+(this.input.down('Space')?7:this.input.down('ControlLeft')?-7:0)*dt));}
     else if(status.hover&&!status.root){this.verticalSpeed=0;this.position.y=Math.min(8,this.position.y+dt*6);}
-    else{if(jump&&!status.root&&!status.stun&&!status.sleep&&(this.position.y<=.001||this.grounded))this.verticalSpeed=GAME.jumpSpeed;this.verticalSpeed-=GAME.gravity*dt;this.position.y=Math.max(0,this.position.y+this.verticalSpeed*dt);this.grounded=false;
+    else{if(jump&&!status.root&&!status.stun&&!status.sleep&&(this.position.y<=.001||this.grounded)){this.verticalSpeed=GAME.jumpSpeed;audio.play('jump');}this.verticalSpeed-=GAME.gravity*dt;this.position.y=Math.max(0,this.position.y+this.verticalSpeed*dt);this.grounded=false;
       if(this.verticalSpeed<=0)for(const o of this.world.obstacles)if(!o.ramp&&previousY>=o.h-.02&&this.position.y<=o.h&&Math.abs(this.position.x-o.x)<o.w/2&&Math.abs(this.position.z-o.z)<o.d/2){this.position.y=o.h;this.verticalSpeed=0;this.grounded=true;}
       const ground=this.world.groundHeight(this.position.x,this.position.z);if(this.position.y<=ground){this.position.y=ground;this.verticalSpeed=0;this.grounded=true;}}
+    const grounded=!status.flight&&!status.hover&&this.position.y<=this.world.groundHeight(this.position.x,this.position.z)+.03;
+    if(grounded&&Math.hypot(this.position.x-previousX,this.position.z-previousZ)>.001){this.footstepTimer-=dt;if(this.footstepTimer<=0){audio.play('footstep',.12);this.footstepTimer=.38;}}
+    else this.footstepTimer=0;
     this.playerVisual.position.copy(this.position);
     this.playerVisual.rotation.y = this.input.yaw + Math.PI;
     for (const system of this.systems) system.fixedUpdate?.(dt, this);
@@ -322,6 +339,7 @@ export class GameEngine {
   dispose() {
     if (this.destroyed) return;
     this.destroyed = true; ++this.authRevision;
+    audio.stopLobbyMusic();
     cancelAnimationFrame(this.raf); this.abort.abort(); this.input?.dispose();
     this.account.dispose(); this.ui.dispose();
     for (const system of this.systems) system.dispose?.();
