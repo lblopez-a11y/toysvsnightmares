@@ -28,6 +28,7 @@ let adminAuth,firestore;
 function getAdminServices(){
  if(!getApps().length){
   const serviceAccountValue=process.env.FIREBASE_SERVICE_ACCOUNT;
+  console.log('[Firebase Admin] FIREBASE_SERVICE_ACCOUNT definido:',Boolean(serviceAccountValue));
   let credential=applicationDefault();
   if(serviceAccountValue){
    let serviceAccount;
@@ -38,8 +39,14 @@ function getAdminServices(){
    }
    serviceAccount.private_key=serviceAccount.private_key.replace(/\\n/g,'\n');
    credential=cert(serviceAccount);
+   console.log('[Firebase Admin] FIREBASE_SERVICE_ACCOUNT parseado y validado correctamente.');
+  }else{
+   console.log('[Firebase Admin] Usando credenciales ADC.');
   }
   initializeApp({credential});
+  console.log('[Firebase Admin] Inicialización completada.');
+ }else{
+  console.log('[Firebase Admin] Aplicación Admin ya inicializada.');
  }
  adminAuth??=getAuth();firestore??=getFirestore();
  return {adminAuth,firestore};
@@ -76,9 +83,20 @@ server.on('upgrade',async(req,socket,head)=>{
       const activeRoom=roomMembers.get(squadId);
       const squadSnapshot=await db.collection('squadLobbies').doc(squadId).get();
       if(client.readyState!==WebSocket.OPEN)return;
+      console.log('[WebSocket] Documento de sala encontrado:',{squadId,exists:squadSnapshot.exists});
       if(!squadSnapshot.exists){send(client,{type:'error',message:'No perteneces a esta sala.'});client.close(1008,'not a squad member');return;}
       const squad=squadSnapshot.data();
-      if(typeof squad.leaderUid!=='string'||typeof squad.memberUid!=='string'||squad.leaderUid===squad.memberUid||![squad.leaderUid,squad.memberUid].includes(identity.uid)){
+      const squadFields=Object.keys(squad||{});
+      const uidMatches={leaderUid:identity.uid===squad?.leaderUid,memberUid:identity.uid===squad?.memberUid};
+      console.log('[WebSocket] Estructura de sala y comparación de UID:',{
+       squadId,
+       tokenUid:identity.uid,
+       documentFields:squadFields,
+       leaderUidType:typeof squad?.leaderUid,
+       memberUidType:typeof squad?.memberUid,
+       uidMatches
+      });
+      if(typeof squad?.leaderUid!=='string'||typeof squad.memberUid!=='string'||squad.leaderUid===squad.memberUid||!Object.values(uidMatches).some(Boolean)){
        send(client,{type:'error',message:'No perteneces a esta sala.'});client.close(1008,'not a squad member');return;
       }
       if(activeRoom?.squad&&(activeRoom.squad.leaderUid!==squad.leaderUid||activeRoom.squad.memberUid!==squad.memberUid)){
