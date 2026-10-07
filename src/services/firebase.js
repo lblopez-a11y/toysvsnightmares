@@ -183,7 +183,7 @@ export class AccountService {
     if(!this.user)throw new Error('Inicia sesión para conectar la partida.');
     if(typeof squadId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(squadId))throw new Error('Sala de escuadrón inválida.');
     if(typeof WebSocket==='undefined')throw new Error('WebSocket no está disponible en este navegador.');
-    const token=await this.user.getIdToken(),endpoint=new URL(globalThis.GAME_SOCKET_URL||globalThis.location.href);
+    const expectedUid=extractUid(this.user.uid),token=await this.user.getIdToken(),endpoint=new URL(globalThis.GAME_SOCKET_URL||globalThis.location.href);
     endpoint.protocol=endpoint.protocol==='https:'?'wss:':'ws:';endpoint.pathname='/game';endpoint.search='';endpoint.searchParams.set('squadId',squadId);
     const socket=new WebSocket(endpoint),opened=await new Promise((resolve,reject)=>{
       let settled=false;
@@ -192,8 +192,11 @@ export class AccountService {
       socket.addEventListener('message',event=>{
         let packet;
         try{packet=JSON.parse(event.data);}catch(error){onError?.(new Error('El servidor envió un paquete de partida inválido.',{cause:error}));return;}
-        if(packet.type==='ready'&&!settled){settled=true;clearTimeout(timeout);resolve(packet);}
-        else if(packet.type==='error'&&!settled){settled=true;clearTimeout(timeout);socket.close();reject(new Error(packet.message||'Error de conexión con la partida.'));}
+        if(packet.type==='ready'&&!settled){
+          if(packet.squadId!==squadId||packet.uid!==expectedUid){settled=true;clearTimeout(timeout);socket.close();reject(new Error('El servidor confirmó una sala o jugador diferente.'));return;}
+          settled=true;clearTimeout(timeout);resolve(packet);
+        }
+        else if(packet.type==='error'&&!settled){console.error('[WebSocket] Error de autenticación de sala:',squadId,packet.message);settled=true;clearTimeout(timeout);socket.close();reject(new Error(packet.message||'Error de conexión con la partida.'));}
         onMessage?.(packet);
       });
       socket.addEventListener('error',()=>{if(!settled){settled=true;clearTimeout(timeout);reject(new Error('No se pudo conectar con el servidor WebSocket de partida.'));}});
@@ -206,6 +209,7 @@ export class AccountService {
     this.gameSockets.add(socket);
     return{
       ready:opened,
+      isOpen:()=>socket.readyState===WebSocket.OPEN,
       send:(type,data)=>{
         if(socket.readyState!==WebSocket.OPEN)throw new Error('La conexión de partida no está abierta.');
         if(!['player:move','player:fire','combat:event','game:state'].includes(type))throw new Error('Evento de partida inválido.');

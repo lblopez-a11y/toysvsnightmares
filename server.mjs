@@ -60,13 +60,16 @@ server.on('upgrade',async(req,socket,head)=>{
       const {adminAuth:auth,firestore:db}=getAdminServices();
       const identity=await auth.verifyIdToken(message.token),squadSnapshot=await db.doc(`squadLobbies/${squadId}`).get();
       if(client.readyState!==WebSocket.OPEN)return;
-      if(!squadSnapshot.exists||![squadSnapshot.data().leaderUid,squadSnapshot.data().memberUid].includes(identity.uid)){
+      if(!squadSnapshot.exists){send(client,{type:'error',message:'No perteneces a esta sala.'});client.close(1008,'not a squad member');return;}
+      const squad=squadSnapshot.data();
+      if(typeof squad.leaderUid!=='string'||typeof squad.memberUid!=='string'||squad.leaderUid===squad.memberUid||![squad.leaderUid,squad.memberUid].includes(identity.uid)){
        send(client,{type:'error',message:'No perteneces a esta sala.'});client.close(1008,'not a squad member');return;
       }
       clearTimeout(authTimeout);
       const room=roomMembers.get(squadId)||new Map();roomMembers.set(squadId,room);
       if(room.has(identity.uid)){send(client,{type:'error',message:'Este usuario ya está conectado a la sala.'});client.close(1008,'duplicate session');return;}
-      client.uid=identity.uid;client.squadId=squadId;client.room=room;client.isLeader=identity.uid===squadSnapshot.data().leaderUid;client.messageWindow=Date.now();client.messageCount=0;room.set(identity.uid,client);
+      client.uid=identity.uid;client.squadId=squadId;client.room=room;client.isLeader=identity.uid===squad.leaderUid;client.messageWindow=Date.now();client.messageCount=0;room.set(identity.uid,client);
+      console.log('[WebSocket] Jugador conectado a sala:',squadId,identity.uid);
       send(client,{type:'ready',squadId,uid:identity.uid,members:[...room.keys()]});
       for(const member of room.values())if(member!==client)send(member,{type:'member:joined',uid:identity.uid});
      })().catch(error=>{console.error('No se pudo autenticar el WebSocket de escuadrón:',error);send(client,{type:'error',message:'No se pudo autenticar la sala.'});client.close(1011,'authentication failed');});
@@ -89,7 +92,7 @@ server.on('upgrade',async(req,socket,head)=>{
      }
     }
     const packet=JSON.stringify({type:message.type,uid:client.uid,data:message.data});
-    for(const member of room.values())if(member!==client&&member.readyState===WebSocket.OPEN)member.send(packet);
+    for(const member of client.room.values())if(member!==client&&member.readyState===WebSocket.OPEN)member.send(packet);
    });
    client.on('close',()=>{clearTimeout(authTimeout);const uid=client.uid,room=client.room;leave(client);if(uid)for(const member of room?.values()||[])send(member,{type:'member:left',uid});});
    client.on('error',error=>console.error('WebSocket de escuadrón:',error));

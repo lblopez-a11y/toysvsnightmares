@@ -7,7 +7,7 @@ export class Deployment {
   this.dialog.querySelectorAll('[data-faction]').forEach(b=>b.onclick=()=>this.chooseFaction(b.dataset.faction));
   this.dialog.querySelector('#confirm-deployment').onclick=async()=>{
    const b=this.dialog.querySelector('#confirm-deployment');if(!this.hero)return;b.disabled=true;
-   try{await engine.progress.select(this.hero);engine.lobby.refresh();this.dialog.close();engine.prepareMatch(this.squad?{squad:this.squad}:undefined);}catch(error){engine.ui.toast(error.message);}finally{b.disabled=!this.hero;}
+   try{await engine.progress.select(this.hero);engine.lobby.refresh();await engine.prepareMatch(this.squad?{squad:this.squad}:undefined);this.dialog.close();}catch(error){engine.ui.toast(error.message);}finally{b.disabled=!this.hero;}
   };
  }
  open({squad=null}={}){this.squad=squad;this.hero=null;this.team=null;const mode=squad?'horde':this.engine.lobby.mode;this.dialog.querySelector('#deployment-mode').textContent=squad?'COOPERATIVO · COFRE CENTRAL':MODES[mode].name;this.dialog.querySelector('[data-faction="nightmares"]').disabled=mode==='horde';this.dialog.querySelector('[data-faction="toys"]').disabled=false;this.dialog.querySelector('#faction-hint').textContent=squad?'Partida cooperativa: ambos elegís un Juguete y defendéis el mismo cofre y las mismas oleadas.':mode==='horde'?'Cofre Central: elige un Juguete. Las Pesadillas forman las oleadas enemigas.':'Ambos equipos aparecen en bases opuestas y avanzan por tres rutas.';this.render();if(squad)this.chooseFaction('toys');this.dialog.showModal();}

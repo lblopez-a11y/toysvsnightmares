@@ -127,26 +127,30 @@ test('WebSocket de partida autentica con Firebase y solo envía eventos de gamep
  const oldWindow=globalThis.window,oldLocation=globalThis.location,oldWebSocket=globalThis.WebSocket;
  class MockWebSocket extends EventTarget{
   static OPEN=1;
+  static readyPacket={type:'ready',uid:'player-1',squadId:'squad-1'};
   constructor(url){super();this.url=url;this.readyState=0;this.sent=[];MockWebSocket.instance=this;queueMicrotask(()=>{this.readyState=1;this.dispatchEvent(new Event('open'));});}
-  send(value){const packet=JSON.parse(value);this.sent.push(packet);if(packet.type==='auth')queueMicrotask(()=>this.receive({type:'ready',uid:'player-1'}));}
+  send(value){const packet=JSON.parse(value);this.sent.push(packet);if(packet.type==='auth')queueMicrotask(()=>this.receive(MockWebSocket.readyPacket));}
   close(){this.readyState=3;this.dispatchEvent(Object.assign(new Event('close'),{code:1000}));}
   receive(packet){const event=new Event('message');event.data=JSON.stringify(packet);this.dispatchEvent(event);}
  }
  globalThis.window={};globalThis.location={href:'https://game.example/app'};
  globalThis.WebSocket=MockWebSocket;
  const service=new AccountService(),received=[];
- service.user={getIdToken:async()=> 'firebase-id-token'};
+ service.user={uid:'player-1',getIdToken:async()=> 'firebase-id-token'};
  try{
   const connection=await service.connectSquadGame('squad-1',{onMessage:packet=>received.push(packet)});
   const socket=MockWebSocket.instance;
   assert.equal(socket.url.toString(),'wss://game.example/game?squadId=squad-1');
   assert.deepEqual(socket.sent,[{type:'auth',token:'firebase-id-token'}]);
   assert.equal(received[0].uid,'player-1');
+  assert.equal(connection.ready.squadId,'squad-1');
   connection.send('player:move',{x:1});
   assert.deepEqual(socket.sent[1],{type:'player:move',data:{x:1}});
   assert.throws(()=>connection.send('untrusted:event',{}),/Evento de partida inválido/);
   connection.close();
   assert.equal(service.gameSockets.size,0);
+  MockWebSocket.readyPacket={type:'ready',uid:'player-1',squadId:'another-squad'};
+  await assert.rejects(service.connectSquadGame('squad-1'),/sala o jugador diferente/);
  }finally{
   for(const socket of service.gameSockets)socket.close();
   globalThis.window=oldWindow;globalThis.location=oldLocation;globalThis.WebSocket=oldWebSocket;

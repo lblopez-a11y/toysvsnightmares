@@ -185,10 +185,16 @@ export class GameEngine {
     window.addEventListener('pagehide', event => { if (!event.persisted) this.dispose(); }, options);
     window.addEventListener('online',()=>void this.progress.flush(),options);
   }
-  prepareMatch(options={}){this.battle.start(options.squad?'horde':this.lobby?.mode||'horde',options.squad?4:this.lobby?.size||4,options.squad||null);this.updateFollowCamera(1,true);document.querySelector('#lock-message').textContent='Haz clic para ocultar el cursor y controlar la cámara. ESC pausa y libera el ratón.';this.state.set('ready');}
+  async prepareMatch(options={}){
+    this.battle.start(options.squad?'horde':this.lobby?.mode||'horde',options.squad?4:this.lobby?.size||4,options.squad||null);
+    if(options.squad)try{await this.battle.ensureSquadConnection();}catch(error){this.battle.stop();document.querySelector('#lock-message').textContent='Error de conexión de red con el servidor';throw error;}
+    this.updateFollowCamera(1,true);document.querySelector('#lock-message').textContent='Haz clic para ocultar el cursor y controlar la cámara. ESC pausa y libera el ratón.';this.state.set('ready');
+  }
+  showSquadNetworkError(){const message='Error de conexión de red con el servidor';const lockMessage=document.querySelector('#lock-message');if(lockMessage)lockMessage.textContent=message;this.ui.toast(message);}
   showLockError(message){document.querySelector('#lock-message').textContent=message;document.querySelector('.browser-help').open=true;this.ui.toast(message);}
   async requestPlay(reset) {
     if (!['ready','paused','dead'].includes(this.state.value)) return;
+    if(this.battle.squadSync)try{await this.battle.ensureSquadConnection();}catch{this.showSquadNetworkError();return;}
     if (reset) {
       if(this.state.value==='dead')this.battle.resetPlayer();
     }
@@ -197,6 +203,7 @@ export class GameEngine {
   }
   onLock() {
     if (!['ready','paused','dead'].includes(this.state.value)) { this.input.unlock(); return; }
+    if(!this.battle.hasOpenSquadConnection()){this.input.unlock();this.showSquadNetworkError();return;}
     audio.stopLobbyMusic();
     const fromMenu = this.state.value === 'ready' || this.state.value === 'dead';
     this.playerVisual.visible = true;

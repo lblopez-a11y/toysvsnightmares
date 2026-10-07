@@ -59,11 +59,13 @@ export class Battle extends ModeSystems {
 
  startSquadSync(squad){
   const account=this.engine.account,uid=account.user?.uid;
+  const squadId=squad.id;
+  if(typeof squadId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(squadId))throw new Error('Sala de escuadrón inválida.');
   if(!uid||![squad.leaderUid,squad.memberUid].includes(uid))throw new Error('No perteneces a este escuadrón.');
   const leader=uid===squad.leaderUid;
-  this.stopSquadSync();this.squadSync={id:squad.id,uid,leader,remoteUid:leader?squad.memberUid:squad.leaderUid,remoteState:null,socket:null,gameTimer:0,playerTimer:0,fireSeq:0,abilitySeq:[0,0,0],reloadSeq:0,upgradeSeq:[0,0,0],remoteFireSeq:0,remoteReloadSeq:0,remoteUpgradeSeq:[0,0,0],remoteCharge:0,remoteWasFiring:false,shots:[],shotSeqs:new Map(),seenShots:new Map(),errorShown:false};
+  this.stopSquadSync();this.squadSync={id:squadId,uid,leader,remoteUid:leader?squad.memberUid:squad.leaderUid,remoteState:null,socket:null,gameTimer:0,playerTimer:0,fireSeq:0,abilitySeq:[0,0,0],reloadSeq:0,upgradeSeq:[0,0,0],remoteFireSeq:0,remoteReloadSeq:0,remoteUpgradeSeq:[0,0,0],remoteCharge:0,remoteWasFiring:false,shots:[],shotSeqs:new Map(),seenShots:new Map(),errorShown:false};
   const sync=this.squadSync;
-  void account.connectSquadGame(squad.id,{
+  sync.connectionPromise=account.connectSquadGame(squadId,{
    onMessage:packet=>{
     if(this.squadSync!==sync)return;
     if(sync.leader&&packet.uid===sync.remoteUid&&['player:move','player:fire'].includes(packet.type))sync.remoteState={...sync.remoteState,...packet.data,receivedAt:performance.now()};
@@ -72,11 +74,28 @@ export class Battle extends ModeSystems {
    },
    onError:error=>{if(this.squadSync===sync)this.squadError(error);},
   }).then(socket=>{
-   if(this.squadSync!==sync){socket.close();return;}
+   if(this.squadSync!==sync){socket.close();throw new Error('La solicitud de conexión de escuadrón ya no está activa.');}
    sync.socket=socket;
+   console.log('[WebSocket] Jugador conectado a sala:',sync.id,sync.uid);
    if(sync.leader)this.publishSquadGame(true);else this.publishSquadPlayer(true);
-  }).catch(error=>{if(this.squadSync===sync)this.squadError(error);});
+   return socket;
+  }).catch(error=>{
+   if(this.squadSync===sync){sync.connectionError=error;console.error('[WebSocket] Error de conexión/autenticación:',sync.id,uid,error);}
+   throw error;
+  });
+  void sync.connectionPromise.catch(()=>{});
  }
+ async ensureSquadConnection(){
+  const sync=this.squadSync;if(!sync)return;
+  try{
+   const socket=await sync.connectionPromise;
+   if(this.squadSync!==sync||!socket?.isOpen())throw new Error('La conexión con la sala se cerró.');
+  }catch(error){
+   console.error('[WebSocket] No se puede iniciar la partida:',sync.id,sync.uid,error);
+   throw new Error('Error de conexión de red con el servidor',{cause:error});
+  }
+ }
+ hasOpenSquadConnection(){return !this.squadSync||!!this.squadSync.socket?.isOpen();}
  stopSquadSync(){
   if(!this.squadSync)return;
   this.squadSync.socket?.close();
