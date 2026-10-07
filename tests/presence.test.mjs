@@ -140,7 +140,7 @@ test('WebSocket de partida autentica con Firebase y solo envía eventos de gamep
  try{
   const connection=await service.connectSquadGame('squad-1',{onMessage:packet=>received.push(packet)});
   const socket=MockWebSocket.instance;
-  assert.equal(socket.url.toString(),'wss://game.example/game?squadId=squad-1');
+  assert.equal(socket.url.toString(),'wss://7aff-186-136-225-70.ngrok-free.app/game?squadId=squad-1');
   assert.deepEqual(socket.sent,[{type:'auth',token:'firebase-id-token'}]);
   assert.equal(received[0].uid,'player-1');
   assert.equal(connection.ready.squadId,'squad-1');

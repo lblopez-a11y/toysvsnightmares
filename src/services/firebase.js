@@ -2,6 +2,8 @@ import { firebaseConfig } from '../config.js';
 import {applyResult,normalizeProfile,profileDefaults,purchase} from '../../functions/shared/progression.js';
 import {CHARACTERS,MODES} from '../../functions/shared/catalog.js';
 
+const SQUAD_GAME_SOCKET_URL='wss://7aff-186-136-225-70.ngrok-free.app';
+
 export function extractUid(rawId){
   if(typeof rawId!=='string')return '';
   const value=rawId.trim(),separator=value.lastIndexOf('#');
@@ -183,8 +185,8 @@ export class AccountService {
     if(!this.user)throw new Error('Inicia sesión para conectar la partida.');
     if(typeof squadId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(squadId))throw new Error('Sala de escuadrón inválida.');
     if(typeof WebSocket==='undefined')throw new Error('WebSocket no está disponible en este navegador.');
-    const expectedUid=extractUid(this.user.uid),token=await this.user.getIdToken(),endpoint=new URL(globalThis.GAME_SOCKET_URL||globalThis.location.href);
-    endpoint.protocol=endpoint.protocol==='https:'?'wss:':'ws:';endpoint.pathname='/game';endpoint.search='';endpoint.searchParams.set('squadId',squadId);
+    const expectedUid=extractUid(this.user.uid),token=await this.user.getIdToken(),endpoint=new URL(globalThis.GAME_SOCKET_URL||SQUAD_GAME_SOCKET_URL);
+    endpoint.protocol=['https:','wss:'].includes(endpoint.protocol)?'wss:':'ws:';endpoint.pathname='/game';endpoint.search='';endpoint.searchParams.set('squadId',squadId);
     const socket=new WebSocket(endpoint),opened=await new Promise((resolve,reject)=>{
       let settled=false;
       const timeout=setTimeout(()=>{if(!settled){settled=true;socket.close();reject(new Error('Tiempo de espera al conectar con el servidor de partida.'));}},8000);
