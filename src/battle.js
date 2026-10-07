@@ -61,14 +61,25 @@ export class Battle extends ModeSystems {
   const account=this.engine.account,uid=account.user?.uid;
   if(!uid||![squad.leaderUid,squad.memberUid].includes(uid))throw new Error('No perteneces a este escuadrón.');
   const leader=uid===squad.leaderUid;
-  this.stopSquadSync();this.squadSync={id:squad.id,uid,leader,remoteUid:leader?squad.memberUid:squad.leaderUid,remoteState:null,gameTimer:0,playerTimer:0,playerPending:false,gamePending:false,fireSeq:0,abilitySeq:[0,0,0],reloadSeq:0,upgradeSeq:[0,0,0],remoteFireSeq:0,remoteReloadSeq:0,remoteUpgradeSeq:[0,0,0],remoteCharge:0,remoteWasFiring:false,shots:[],shotSeqs:new Map(),seenShots:new Map(),errorShown:false};
+  this.stopSquadSync();this.squadSync={id:squad.id,uid,leader,remoteUid:leader?squad.memberUid:squad.leaderUid,remoteState:null,socket:null,gameTimer:0,playerTimer:0,fireSeq:0,abilitySeq:[0,0,0],reloadSeq:0,upgradeSeq:[0,0,0],remoteFireSeq:0,remoteReloadSeq:0,remoteUpgradeSeq:[0,0,0],remoteCharge:0,remoteWasFiring:false,shots:[],shotSeqs:new Map(),seenShots:new Map(),errorShown:false};
   const sync=this.squadSync;
-  sync.unsubs=[account.watchSquadPlayers(squad.id,players=>{if(this.squadSync!==sync)return;sync.remoteState=players.find(player=>player.uid===sync.remoteUid)||null;},error=>this.squadError(error))];
-  if(!leader)sync.unsubs.push(account.watchSquadGame(squad.id,state=>{if(this.squadSync===sync&&state)this.applySquadGame(state);},error=>this.squadError(error)));
+  void account.connectSquadGame(squad.id,{
+   onMessage:packet=>{
+    if(this.squadSync!==sync)return;
+    if(sync.leader&&packet.uid===sync.remoteUid&&['player:move','player:fire'].includes(packet.type))sync.remoteState={...sync.remoteState,...packet.data,receivedAt:performance.now()};
+    else if(!sync.leader&&packet.type==='game:state')this.applySquadGame(packet.data);
+    else if(!sync.leader&&packet.type==='combat:event'&&packet.data.kind==='shot'){audio.play('shoot');this.playSquadShots([packet.data.shot]);}
+   },
+   onError:error=>{if(this.squadSync===sync)this.squadError(error);},
+  }).then(socket=>{
+   if(this.squadSync!==sync){socket.close();return;}
+   sync.socket=socket;
+   if(sync.leader)this.publishSquadGame(true);else this.publishSquadPlayer(true);
+  }).catch(error=>{if(this.squadSync===sync)this.squadError(error);});
  }
  stopSquadSync(){
   if(!this.squadSync)return;
-  for(const unsubscribe of this.squadSync.unsubs||[])unsubscribe?.();
+  this.squadSync.socket?.close();
   this.squadSync=null;
   for(const actor of this.actors)if(actor.remoteHuman){actor.remoteHuman=false;actor.remoteUid=null;actor.remoteTarget=null;actor.remoteAim=null;actor.remoteState=null;}
  }
@@ -95,17 +106,22 @@ export class Battle extends ModeSystems {
   ['Digit1','Digit2','Digit3'].forEach((key,index)=>{if(input.consumeAction(key))sync.upgradeSeq[index]++;});
  }
  publishSquadPlayer(force=false){
-  const sync=this.squadSync;if(!sync)return;
-  if(sync.playerPending){sync.forcePlayerWrite||=force;return;}
+  const sync=this.squadSync;if(!sync||sync.leader)return;
   const p=this.player.position,input=this.engine.input;
-  sync.playerPending=true;
-  void this.engine.account.publishSquadPlayer(sync.id,{
+  const data={
    hero:this.player.id,characterId:this.player.id,x:p.x,y:p.y,z:p.z,...this.playerVelocity,yaw:input.yaw,pitch:input.pitch,
    moving:this.player.moving,aiming:input.aiming,
    firing:input.firing||input.down('KeyF'),fireSeq:sync.fireSeq,
    abilitySeq:sync.abilitySeq,reloadSeq:sync.reloadSeq,upgradeSeq:sync.upgradeSeq,
    playing:sync.playing??(this.engine.state.value==='playing'),
-  }).catch(error=>this.squadError(error)).finally(()=>{if(this.squadSync===sync){sync.playerPending=false;if(sync.forcePlayerWrite){sync.forcePlayerWrite=false;this.publishSquadPlayer(true);}}});
+  };
+  if(sync.socket)try{
+   sync.socket.send('player:move',data);
+   if(data.firing||data.fireSeq>(sync.lastSentFireSeq||0)){
+    sync.socket.send('player:fire',{fireSeq:data.fireSeq,firing:data.firing,yaw:data.yaw,pitch:data.pitch});
+    sync.lastSentFireSeq=data.fireSeq;
+   }
+  }catch(error){this.squadError(error);}
  }
  updateSquadSync(dt){
   const sync=this.squadSync;if(!sync)return;
@@ -116,7 +132,7 @@ export class Battle extends ModeSystems {
   }
   this.applyRemoteSquadPlayer(dt);
   sync.gameTimer-=dt;
-  if(sync.gameTimer<=0&&!sync.gamePending){this.publishSquadGame();sync.gameTimer=.1;}
+  if(sync.gameTimer<=0){this.publishSquadGame();sync.gameTimer=.1;}
  }
  ensureRemoteActor(uid,hero){
   const characterId=CHARACTERS[hero]?.team==='toys'?hero:'captain';
@@ -131,8 +147,7 @@ export class Battle extends ModeSystems {
  applyRemoteSquadPlayer(dt){
   const sync=this.squadSync,data=sync?.remoteState;
   if(!sync||!data)return;
-  const sentAt=data.sentAt?.toMillis?.()??data.sentAt;
-  const fresh=Number.isFinite(sentAt)&&Date.now()-sentAt<3500;
+  const fresh=Number.isFinite(data.receivedAt)&&performance.now()-data.receivedAt<3500;
   const characterId=data.characterId||data.hero;
   const actor=this.ensureRemoteActor(sync.remoteUid,characterId);
   actor.remoteFresh=fresh&&data.playing;
@@ -167,8 +182,8 @@ export class Battle extends ModeSystems {
   const uid=actor===this.player?sync.uid:actor.remoteUid;if(!uid)return;
   const seq=(sync.shotSeqs.get(uid)||0)+1;sync.shotSeqs.set(uid,seq);
   const aim=actor===this.player?this.engine.input:actor.remoteState||{};
-  sync.shots.push({uid,seq,hero:actor.id,x:actor.position.x,y:actor.position.y,z:actor.position.z,yaw:aim.yaw||0,pitch:aim.pitch||0,range:actor.spec.weapon.range});
-  if(sync.shots.length>16)sync.shots.shift();
+  const shot={uid,seq,hero:actor.id,x:actor.position.x,y:actor.position.y,z:actor.position.z,yaw:aim.yaw||0,pitch:aim.pitch||0,range:actor.spec.weapon.range};
+  try{sync.socket?.send('combat:event',{kind:'shot',shot});}catch(error){this.squadError(error);}
  }
  playSquadShots(shots){
   const sync=this.squadSync;if(!sync||sync.leader)return;
@@ -190,11 +205,10 @@ export class Battle extends ModeSystems {
   if(sync.gamePending){sync.forceGameWrite||=force;return;}
   const syncStatus=actor=>Object.fromEntries(['cloak','stun','sleep','slow','haste','root','flight','hover','jump','spawn','shieldTime','guard','defense','power','weaken','aura','blind','scan'].filter(key=>typeof actor.status[key]==='boolean'||Number.isFinite(actor.status[key])).map(key=>[key,actor.status[key]]));
   const serialize=actor=>({team:actor.team,slot:actor.slot,id:actor.id,boss:!!actor.boss,active:!!actor.active,state:actor.state,moving:!!actor.moving,x:actor.position.x,y:actor.position.y,z:actor.position.z,yaw:actor.model.rotation.y,health:actor.health,maxHealth:actor.maxHealth,shield:actor.shield||0,status:syncStatus(actor),deathTime:Number(actor.deathTime)||0,ammo:Number(actor.ammo)||0,reload:Number(actor.reload)||0,cooldowns:Array.from(actor.cooldowns)});
-  const hostPlayer={hero:this.player.id,characterId:this.player.id,active:this.player.active,x:this.player.position.x,y:this.player.position.y,z:this.player.position.z,...this.playerVelocity,yaw:this.player.model.rotation.y,health:this.player.health,maxHealth:this.player.maxHealth,shield:this.player.shield||0,status:syncStatus(this.player),deathTime:Number(this.player.deathTime)||0,ammo:Number(this.player.ammo)||0,reload:Number(this.player.reload)||0,cooldowns:Array.from(this.player.cooldowns)};
+  const hostPlayer={hero:this.player.id,characterId:this.player.id,active:this.player.active,x:this.player.position.x,y:this.player.position.y,z:this.player.position.z,...this.playerVelocity,yaw:this.player.model.rotation.y,aimYaw:this.engine.input.yaw,aimPitch:this.engine.input.pitch,health:this.player.health,maxHealth:this.player.maxHealth,shield:this.player.shield||0,status:syncStatus(this.player),deathTime:Number(this.player.deathTime)||0,ammo:Number(this.player.ammo)||0,reload:Number(this.player.reload)||0,cooldowns:Array.from(this.player.cooldowns)};
   const actors=[];for(const team of ['toys','nightmares'])for(const actor of this.banks[team].items)actors.push({...serialize(actor),...(actor.remoteUid?{remoteUid:actor.remoteUid}:{})});
   const match={wave:this.match.wave,remaining:this.match.remaining,phase:this.match.phase,timer:this.match.timer,duration:this.time,baseHealth:this.match.baseHealth,kills:this.match.kills,score:this.match.score,sector:this.match.sector,capture:this.match.capture,contested:this.match.contested,points:this.match.points,winner:this.match.winner,wavePoints:this.match.wavePoints,upgrades:this.match.upgrades};
-  sync.gamePending=true;
-  void this.engine.account.publishSquadGame(sync.id,{actors,hostPlayer,match,shots:sync.shots.map(shot=>({...shot}))}).catch(error=>this.squadError(error)).finally(()=>{if(this.squadSync===sync){sync.gamePending=false;if(sync.forceGameWrite){sync.forceGameWrite=false;this.publishSquadGame(true);}}});
+  if(sync.socket)try{sync.socket.send('game:state',{actors,hostPlayer,match});}catch(error){this.squadError(error);}
  }
  applySquadGame(state){
   const sync=this.squadSync;if(!sync||sync.leader)return;

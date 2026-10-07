@@ -17,7 +17,7 @@ function generatePlayerTag(displayName,uid){
  * no impide probar el motor como invitado. Nunca guarda datos de invitado.
  */
 export class AccountService {
-  constructor() { this.enabled = !!firebaseConfig?.projectId; this.user = null; this.presenceCleanup=null; }
+  constructor() { this.enabled = !!firebaseConfig?.projectId; this.user = null; this.presenceCleanup=null;this.gameSockets=new Set(); }
   async init(onSession) {
     if (!this.enabled) return;
     const [appSDK, authSDK, firestoreSDK] = await Promise.all([
@@ -179,6 +179,41 @@ export class AccountService {
     const squad=this.squadRef(squadId),state=this.firestoreSDK.doc(squad,'game','current');
     return this.firestoreSDK.onSnapshot(state,snapshot=>onValue(snapshot.exists()?snapshot.data():null),onError);
   }
+  async connectSquadGame(squadId,{onMessage,onError}={}){
+    if(!this.user)throw new Error('Inicia sesión para conectar la partida.');
+    if(typeof squadId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(squadId))throw new Error('Sala de escuadrón inválida.');
+    if(typeof WebSocket==='undefined')throw new Error('WebSocket no está disponible en este navegador.');
+    const token=await this.user.getIdToken(),endpoint=new URL(globalThis.GAME_SOCKET_URL||globalThis.location.href);
+    endpoint.protocol=endpoint.protocol==='https:'?'wss:':'ws:';endpoint.pathname='/game';endpoint.search='';endpoint.searchParams.set('squadId',squadId);
+    const socket=new WebSocket(endpoint),opened=await new Promise((resolve,reject)=>{
+      let settled=false;
+      const timeout=setTimeout(()=>{if(!settled){settled=true;socket.close();reject(new Error('Tiempo de espera al conectar con el servidor de partida.'));}},8000);
+      socket.addEventListener('open',()=>socket.send(JSON.stringify({type:'auth',token})),{once:true});
+      socket.addEventListener('message',event=>{
+        let packet;
+        try{packet=JSON.parse(event.data);}catch(error){onError?.(new Error('El servidor envió un paquete de partida inválido.',{cause:error}));return;}
+        if(packet.type==='ready'&&!settled){settled=true;clearTimeout(timeout);resolve(packet);}
+        else if(packet.type==='error'&&!settled){settled=true;clearTimeout(timeout);socket.close();reject(new Error(packet.message||'Error de conexión con la partida.'));}
+        onMessage?.(packet);
+      });
+      socket.addEventListener('error',()=>{if(!settled){settled=true;clearTimeout(timeout);reject(new Error('No se pudo conectar con el servidor WebSocket de partida.'));}});
+      socket.addEventListener('close',event=>{
+        this.gameSockets.delete(socket);
+        if(!settled){settled=true;clearTimeout(timeout);reject(new Error(`Conexión WebSocket cerrada durante la autenticación (${event.code}).`));}
+        else if(event.code!==1000&&event.code!==1001)onError?.(new Error(`Conexión con la partida cerrada (${event.code}).`));
+      });
+    });
+    this.gameSockets.add(socket);
+    return{
+      ready:opened,
+      send:(type,data)=>{
+        if(socket.readyState!==WebSocket.OPEN)throw new Error('La conexión de partida no está abierta.');
+        if(!['player:move','player:fire','combat:event','game:state'].includes(type))throw new Error('Evento de partida inválido.');
+        socket.send(JSON.stringify({type,data}));
+      },
+      close:()=>{this.gameSockets.delete(socket);socket.close();},
+    };
+  }
   async publishSquadPlayer(squadId,data){
     if(!this.user||!this.db)throw new Error('Inicia sesión para sincronizar la partida.');
     const characterId=data.characterId||data.hero;
@@ -266,5 +301,5 @@ export class AccountService {
   // XP, desbloqueos y K/D se escribirán desde un backend de confianza.
   // Firestore es persistencia de perfiles; no es transporte de simulación FPS.
   async signOut() { await this.stopPresence();if (this.auth) await this.authSDK.signOut(this.auth); }
-  dispose() { this.stopPresence();this.unsubscribe?.(); }
+  dispose() { this.stopPresence();for(const socket of this.gameSockets)socket.close();this.gameSockets.clear();this.unsubscribe?.(); }
 }
